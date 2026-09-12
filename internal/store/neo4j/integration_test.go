@@ -7,25 +7,25 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agmonetti/relm/internal/conn"
-	"github.com/agmonetti/relm/internal/store"
+	"github.com/agmonetti/picklock/internal/conn"
+	"github.com/agmonetti/picklock/internal/store"
 )
 
-const itLabel = "RelmItTest"
+const itLabel = "PicklockItTest"
 
 func neoEnvCfg(t *testing.T) conn.ConnectionConfig {
 	t.Helper()
-	host := os.Getenv("RELM_TEST_NEO4J_HOST")
+	host := os.Getenv("PICKLOCK_TEST_NEO4J_HOST")
 	if host == "" {
-		t.Skipf("env RELM_TEST_NEO4J_HOST not set; skipping integration test")
+		t.Skipf("env PICKLOCK_TEST_NEO4J_HOST not set; skipping integration test")
 	}
 	port := 7687
-	if p := os.Getenv("RELM_TEST_NEO4J_PORT"); p != "" {
+	if p := os.Getenv("PICKLOCK_TEST_NEO4J_PORT"); p != "" {
 		if n, err := strconv.Atoi(p); err == nil && n > 0 {
 			port = n
 		}
 	}
-	db := os.Getenv("RELM_TEST_NEO4J_DATABASE")
+	db := os.Getenv("PICKLOCK_TEST_NEO4J_DATABASE")
 	if db == "" {
 		db = "neo4j"
 	}
@@ -33,8 +33,8 @@ func neoEnvCfg(t *testing.T) conn.ConnectionConfig {
 		Driver:   conn.DriverNeo4j,
 		Host:     host,
 		Port:     port,
-		User:     os.Getenv("RELM_TEST_NEO4J_USER"),
-		Password: os.Getenv("RELM_TEST_NEO4J_PASSWORD"),
+		User:     os.Getenv("PICKLOCK_TEST_NEO4J_USER"),
+		Password: os.Getenv("PICKLOCK_TEST_NEO4J_PASSWORD"),
 		Database: db,
 	}
 }
@@ -228,7 +228,7 @@ func TestIntegrationReadOnly(t *testing.T) {
 	defer ds.Close()
 
 	ctx := context.Background()
-	if _, err := ds.Query().Execute(ctx, "CREATE (n:RelmRo {x: 1})", 0, 10); err == nil {
+	if _, err := ds.Query().Execute(ctx, "CREATE (n:PicklockRo {x: 1})", 0, 10); err == nil {
 		t.Error("CREATE in read-only must be blocked")
 	}
 	if _, err := ds.Query().Execute(ctx, "MATCH (n) RETURN count(n) LIMIT 1", 0, 10); err != nil {

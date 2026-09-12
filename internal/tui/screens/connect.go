@@ -12,8 +12,8 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/mattn/go-runewidth"
 
-	"github.com/agmonetti/relm/internal/conn"
-	"github.com/agmonetti/relm/internal/tui/styles"
+	"github.com/agmonetti/picklock/internal/conn"
+	"github.com/agmonetti/picklock/internal/tui/styles"
 )
 
 // ConnectMsg is emitted when the user asks to connect.
@@ -31,13 +31,14 @@ type DeleteConnectionMsg struct {
 	Name string
 }
 
-// logoASCII is the connect screen logo (figlet "relm", blocks font).
-const logoASCII = `  _____  ______  _      __  __ 
- |  __ \|  ____|| |    |  \/  |
- | |__) | |__   | |    | \  / |
- |  _  /|  __|  | |    | |\/| |
- | | \ \| |____ | |____| |  | |
- |_|  \_\______|_\_____|_|  |_|`
+// logoASCII is the connect screen logo (figlet "picklock", standard/blocks font).
+const logoASCII = `       _       _     _             _     
+      (_)     | |   | |           | |    
+ ____  _  ____| |  _| | ___   ____| |  _ 
+|  _ \| |/ ___) |_/ ) |/ _ \ / ___) |_/ )
+| |_| | ( (___|  _ (| | |_| ( (___|  _ ( 
+|  __/|_|\____)_| \_)\_)___/ \____)_| \_)
+|_|                                      `
 
 // field is a form label + input. If isToggle is true, the field is a boolean
 // (checkbox) and input is not used.

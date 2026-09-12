@@ -9,8 +9,8 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/muesli/termenv"
 
-	"github.com/agmonetti/relm/internal/browser"
-	"github.com/agmonetti/relm/internal/store"
+	"github.com/agmonetti/picklock/internal/browser"
+	"github.com/agmonetti/picklock/internal/store"
 	"github.com/mattn/go-runewidth"
 )
 

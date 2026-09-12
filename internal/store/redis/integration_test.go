@@ -9,23 +9,23 @@ import (
 
 	goredis "github.com/redis/go-redis/v9"
 
-	"github.com/agmonetti/relm/internal/conn"
-	"github.com/agmonetti/relm/internal/store"
+	"github.com/agmonetti/picklock/internal/conn"
+	"github.com/agmonetti/picklock/internal/store"
 )
 
 func redisEnvCfg(t *testing.T) conn.ConnectionConfig {
 	t.Helper()
-	host := os.Getenv("RELM_TEST_REDIS_HOST")
+	host := os.Getenv("PICKLOCK_TEST_REDIS_HOST")
 	if host == "" {
-		t.Skipf("env RELM_TEST_REDIS_HOST not set; skipping integration test")
+		t.Skipf("env PICKLOCK_TEST_REDIS_HOST not set; skipping integration test")
 	}
 	port := 6379
-	if p := os.Getenv("RELM_TEST_REDIS_PORT"); p != "" {
+	if p := os.Getenv("PICKLOCK_TEST_REDIS_PORT"); p != "" {
 		if n, err := strconv.Atoi(p); err == nil && n > 0 {
 			port = n
 		}
 	}
-	db := os.Getenv("RELM_TEST_REDIS_DATABASE")
+	db := os.Getenv("PICKLOCK_TEST_REDIS_DATABASE")
 	if db == "" {
 		db = "0"
 	}
@@ -33,7 +33,7 @@ func redisEnvCfg(t *testing.T) conn.ConnectionConfig {
 		Driver:   conn.DriverRedis,
 		Host:     host,
 		Port:     port,
-		Password: os.Getenv("RELM_TEST_REDIS_PASSWORD"),
+		Password: os.Getenv("PICKLOCK_TEST_REDIS_PASSWORD"),
 		Database: db,
 	}
 }

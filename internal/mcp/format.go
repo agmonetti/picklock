@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/agmonetti/relm/internal/store"
+	"github.com/agmonetti/picklock/internal/store"
 )
 
 // formatDataView renders any DataView as human-readable text for MCP tool results.

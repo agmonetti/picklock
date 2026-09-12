@@ -5,10 +5,10 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/agmonetti/relm/internal/conn"
-	"github.com/agmonetti/relm/internal/editor"
-	"github.com/agmonetti/relm/internal/store"
-	"github.com/agmonetti/relm/internal/tui/screens"
+	"github.com/agmonetti/picklock/internal/conn"
+	"github.com/agmonetti/picklock/internal/editor"
+	"github.com/agmonetti/picklock/internal/store"
+	"github.com/agmonetti/picklock/internal/tui/screens"
 )
 
 // newEditorWithPersistedHistory creates an editor whose history is preloaded

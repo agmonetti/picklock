@@ -6,9 +6,9 @@ This file documents crossroads and decisions the agent makes during development,
 
 ## L-01 — Go module without a real repo: don't use the literal `[usuario]`
 
-**Crossroads:** the SPEC says `go mod init github.com/[usuario]/relm`, but `[usuario]` with brackets is not a valid module path for Go and there is no real repo.
+**Crossroads:** the SPEC says `go mod init github.com/[usuario]/picklock`, but `[usuario]` with brackets is not a valid module path for Go and there is no real repo.
 
-**Decision:** use `module relm` (simple name). When the project was published to `github.com/agmonetti/relm`, it was changed to `module github.com/agmonetti/relm` with a `sed` (`s|"relm/|"github.com/agmonetti/relm/|g` over the `*.go` files plus the `module` line in `go.mod`), which enables `go install github.com/agmonetti/relm@latest`.
+**Decision:** use `module picklock` (simple name). When the project was published to `github.com/agmonetti/picklock`, it was changed to `module github.com/agmonetti/picklock` with a `sed` (`s|"picklock/|"github.com/agmonetti/picklock/|g` over the `*.go` files plus the `module` line in `go.mod`), which enables `go install github.com/agmonetti/picklock@latest`.
 
 **Lesson:** when the SPEC has invalid placeholders, resolve with the simplest option and note it here instead of asking. The module path is migrated on publish with a mechanical sed.
 
@@ -53,7 +53,7 @@ This file documents crossroads and decisions the agent makes during development,
 **Decision:** registry pattern:
 - `store` defines the interface, types, errors and a `Register(driver, constructor)` + `New(cfg)` that looks up the registry.
 - Each engine calls `store.Register(...)` in its `init()`.
-- `cmd` imports the engines blank (`_ "relm/internal/store/sqlite"`) so they register.
+- `cmd` imports the engines blank (`_ "picklock/internal/store/sqlite"`) so they register.
 - `store` does NOT import any engine → no cycle.
 
 **Lesson:** the "plugin registry with init()" is the Go pattern to avoid cycles between a contract and its implementations. The registry is build-time configuration, not runtime state — it doesn't violate "no global state".
@@ -116,7 +116,7 @@ This file documents crossroads and decisions the agent makes during development,
 
 **Decision:** a `step()` helper in the tests executes the returned `cmd` and feeds back the message it produces (like the bubbletea program does). Without this, deferred messages (`ConnectMsg`) never reach the model in the test.
 
-**Lesson:** to test a message architecture you have to simulate the runtime: execute cmds and re-feed their messages. Also, the TUI tests need the engine's blank import (`_ "relm/internal/store/sqlite"`) or the registry never runs.
+**Lesson:** to test a message architecture you have to simulate the runtime: execute cmds and re-feed their messages. Also, the TUI tests need the engine's blank import (`_ "picklock/internal/store/sqlite"`) or the registry never runs.
 
 ---
 
@@ -164,7 +164,7 @@ This file documents crossroads and decisions the agent makes during development,
 
 **Crossroads:** the engines compiled and the unit-tested dialects passed, but real syntax and introspection bugs only appeared against real servers (docker) — the mssql case above.
 
-**Decision:** per-engine integration tests triggered by env vars (`RELM_TEST_<MOTOR>_HOST`, etc.) that exercise the whole `Store` interface: tables, columns, constraints, indexes, count, pagination, version. They skip with `t.Skip` if there's no env var, so `go test ./...` always passes.
+**Decision:** per-engine integration tests triggered by env vars (`PICKLOCK_TEST_<MOTOR>_HOST`, etc.) that exercise the whole `Store` interface: tables, columns, constraints, indexes, count, pagination, version. They skip with `t.Skip` if there's no env var, so `go test ./...` always passes.
 
 **Lesson:** the phase-7 done criterion ("connect to each engine in docker") is what really validates the work. Docker is available in this environment: use ephemeral containers (`--rm`) with standard ports.
 
@@ -250,7 +250,7 @@ This file documents crossroads and decisions the agent makes during development,
 - PK autoincrement: `BIGSERIAL` (PG), `AUTO_INCREMENT` (MySQL/MariaDB), `IDENTITY(1,1)` (MSSQL).
 - `TEXT UNIQUE` → `VARCHAR(255) UNIQUE` / `NVARCHAR(255) UNIQUE` (TEXT and NVARCHAR(MAX) can't be UNIQUE key columns in MySQL/MSSQL).
 - `CREATE TABLE IF NOT EXISTS` doesn't exist in MSSQL → drop tables first, then plain `CREATE TABLE`.
-- Reserved words (`key`, `read`) need quoting; quote ALL identifiers per engine (backticks/brackets), mirroring relm's own `QuoteIdent`.
+- Reserved words (`key`, `read`) need quoting; quote ALL identifiers per engine (backticks/brackets), mirroring picklock's own `QuoteIdent`.
 - Placeholders differ: `?` / `$N` (pgx) / `@pN` (mssql).
 - `sql.Open` driver names differ from engine names: mariadb → "mysql", postgres → "pgx", mssql → "sqlserver".
 
@@ -310,9 +310,9 @@ This file documents crossroads and decisions the agent makes during development,
 
 ## L-30 — A DSN parser can't guess the scheme by "://"
 
-**Crossroads:** `relm <dsn>` had to tell a SQLite path (`./app.db`, `/abs/db.sqlite`) apart from a network URL (`postgres://...`). The obvious heuristic — `strings.Contains(dsn, "://")` — misclassifies `sqlite:relm.db` and `file:relm.db` (no `://`), and would glue a `?mode=ro` query onto a `file:/path?mode=ro` path.
+**Crossroads:** `picklock <dsn>` had to tell a SQLite path (`./app.db`, `/abs/db.sqlite`) apart from a network URL (`postgres://...`). The obvious heuristic — `strings.Contains(dsn, "://")` — misclassifies `sqlite:picklock.db` and `file:picklock.db` (no `://`), and would glue a `?mode=ro` query onto a `file:/path?mode=ro` path.
 
-**Decision:** parse every argument with `net/url` and switch on `u.Scheme`: `postgres`/`mysql`/`mariadb`/`sqlserver` → network engines, `sqlite`/`file` → SQLite, and **empty scheme** → a plain SQLite path. For relative URIs (`sqlite:relm.db`) the path lives in `u.Opaque`, not `u.Path`; absolute ones use `u.Path`. And the database location differs per engine: SQL Server puts it in the `?database=` query (its URL format has no path database), the rest in the path.
+**Decision:** parse every argument with `net/url` and switch on `u.Scheme`: `postgres`/`mysql`/`mariadb`/`sqlserver` → network engines, `sqlite`/`file` → SQLite, and **empty scheme** → a plain SQLite path. For relative URIs (`sqlite:picklock.db`) the path lives in `u.Opaque`, not `u.Path`; absolute ones use `u.Path`. And the database location differs per engine: SQL Server puts it in the `?database=` query (its URL format has no path database), the rest in the path.
 
 **Lesson:** URL-ish strings lie on the edge cases between "has a scheme" and "is a path"; write the parser against the actual `net/url` fields (Scheme/Path/Opaque) and per-engine quirks, tested with the exact strings you document, instead of a substring heuristic.
 
@@ -324,7 +324,7 @@ This file documents crossroads and decisions the agent makes during development,
 
 **Decision:** enforce where each driver allows it and be honest where it does not:
 - MySQL/MariaDB: `SET SESSION TRANSACTION READ ONLY` is per-connection, and the `database/sql` pool hands statements to arbitrary connections. `Exec`/`ExecContext` in read-only mode pin one connection (`db.Conn`), set the session var there, and run the statement on it — the server rejects the write. Reads stay on the normal pool.
-- SQL Server: the driver has no server-side read-only session mode, so relm now enforces read-only at the application level — `IsSQLWrite` blocks `INSERT`/`UPDATE`/`DELETE`/`CREATE`/`DROP`/etc. when `read_only` is set, mirroring the Redis/Cassandra guards.
+- SQL Server: the driver has no server-side read-only session mode, so picklock now enforces read-only at the application level — `IsSQLWrite` blocks `INSERT`/`UPDATE`/`DELETE`/`CREATE`/`DROP`/etc. when `read_only` is set, mirroring the Redis/Cassandra guards.
 
 **Lesson:** a feature named the same across engines is really per-engine behavior; map it to each driver's actual mechanism and surface the gap visibly — for MSSQL the gap is now closed by an app-level guard instead of a warning.
 
@@ -342,9 +342,9 @@ This file documents crossroads and decisions the agent makes during development,
 
 ## L-33 — A new persisted file turns existing tests into config writers
 
-**Crossroads:** adding the persistent query history (writes to `~/.config/relm/history.json`) meant any test that ran a query silently wrote to the **real user config dir** — until then the TUI tests only *read* `RELM_CONFIG_DIR` and scattered `t.Setenv` per test was enough.
+**Crossroads:** adding the persistent query history (writes to `~/.config/picklock/history.json`) meant any test that ran a query silently wrote to the **real user config dir** — until then the TUI tests only *read* `PICKLOCK_CONFIG_DIR` and scattered `t.Setenv` per test was enough.
 
-**Decision:** added a package-level `TestMain` that points `RELM_CONFIG_DIR` at a throwaway `os.MkdirTemp` dir for the whole tui test binary. It is hermetic (saved connections, prefs and history are all isolated) and it removes the per-test `Setenv` noise going forward. The file is written only on the UI goroutine, immediately next to the `History.Push` it mirrors, so there is no file race with the query goroutines.
+**Decision:** added a package-level `TestMain` that points `PICKLOCK_CONFIG_DIR` at a throwaway `os.MkdirTemp` dir for the whole tui test binary. It is hermetic (saved connections, prefs and history are all isolated) and it removes the per-test `Setenv` noise going forward. The file is written only on the UI goroutine, immediately next to the `History.Push` it mirrors, so there is no file race with the query goroutines.
 
 **Lesson:** when a feature starts *writing* a user file that tests previously only read, the fix is to isolate the config root once for the entire test binary — not to sprinkle more `t.Setenv` lines in individual tests (a future test author will forget one).
 

@@ -10,7 +10,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/mattn/go-runewidth"
 
-	"github.com/agmonetti/relm/internal/conn"
+	"github.com/agmonetti/picklock/internal/conn"
 )
 
 func TestConnScreen_SQLiteOnlyShowsPath(t *testing.T) {

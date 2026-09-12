@@ -109,7 +109,7 @@ func SeedRedis(ctx context.Context, client *goredis.Client) error {
 	_ = client.FlushDB(ctx).Err()
 
 	// 1. Strings
-	_ = client.Set(ctx, "app:config:title", "Relm Multi-Paradigm Browser", 0).Err()
+	_ = client.Set(ctx, "app:config:title", "Picklock Multi-Paradigm Browser", 0).Err()
 	_ = client.Set(ctx, "app:config:version", "2.0.0-experimental", 0).Err()
 	_ = client.Set(ctx, "session:token:1001", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...", 3600*time.Second).Err()
 	_ = client.Set(ctx, "cache:user:count", "15420", 300*time.Second).Err()
@@ -156,7 +156,7 @@ func SeedRedis(ctx context.Context, client *goredis.Client) error {
 	return nil
 }
 
-// SeedCassandra creates keyspace relm_demo and tables with Partition + Clustering keys.
+// SeedCassandra creates keyspace picklock_demo and tables with Partition + Clustering keys.
 func SeedCassandra(session *gocql.Session, keyspace string) error {
 	stmts := []string{
 		fmt.Sprintf("CREATE KEYSPACE IF NOT EXISTS %s WITH replication = {'class': 'SimpleStrategy', 'replication_factor': 1}", keyspace),

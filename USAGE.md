@@ -1,7 +1,7 @@
 # USAGE — first steps, step by step
 
-`relm` **does not start servers or create files on its own**. It connects to
-databases that **already exist and are running** — you bring the database, `relm`
+`picklock` **does not start servers or create files on its own**. It connects to
+databases that **already exist and are running** — you bring the database, `picklock`
 opens a window to look at it, browse its data, inspect its schema, and query it.
 
 - **SQLite** = a `.db` file on your disk (no server). You create it yourself or with `make demo`.
@@ -24,29 +24,29 @@ docker compose up -d
 ### Build the binary
 
 ```bash
-go build -o relm ./cmd/relm
-./relm
+go build -o picklock ./cmd/picklock
+./picklock
 ```
 
 ### Skip the connection screen with a DSN
 
 ```bash
 # Relational
-relm ./db.sqlite                                        # SQLite file
-relm postgres://postgres:postgres@localhost:5432/test   # PostgreSQL
-relm mysql://root:root@localhost:3306/test             # MySQL
-relm mariadb://root:root@localhost:3307/test           # MariaDB
-relm 'sqlserver://sa:Str0ng!Passw0rd@localhost:1433?database=master'
+picklock ./db.sqlite                                        # SQLite file
+picklock postgres://postgres:postgres@localhost:5432/test   # PostgreSQL
+picklock mysql://root:root@localhost:3306/test             # MySQL
+picklock mariadb://root:root@localhost:3307/test           # MariaDB
+picklock 'sqlserver://sa:Str0ng!Passw0rd@localhost:1433?database=master'
 
 # Non-Relational
-relm mongodb://localhost:27017/test                    # MongoDB
-relm redis://localhost:6379/0                          # Redis
-relm cassandra://localhost:9042/relm_demo              # Cassandra
-relm neo4j://neo4j:password@localhost:7687/neo4j      # Neo4j
+picklock mongodb://localhost:27017/test                    # MongoDB
+picklock redis://localhost:6379/0                          # Redis
+picklock cassandra://localhost:9042/picklock_demo              # Cassandra
+picklock neo4j://neo4j:password@localhost:7687/neo4j      # Neo4j
 
 # Read-only enforcement
-relm --read-only postgres://postgres:postgres@localhost:5432/test
-relm --read-only redis://localhost:6379/0
+picklock --read-only postgres://postgres:postgres@localhost:5432/test
+picklock --read-only redis://localhost:6379/0
 ```
 
 ---
@@ -58,7 +58,7 @@ relm --read-only redis://localhost:6379/0
 ```bash
 go run ./cmd/demo
 # creates demo.db with 20 tables
-./relm demo.db
+./picklock demo.db
 ```
 
 ### 1b. Navigation Basics
@@ -85,7 +85,7 @@ docker compose up -d postgres mysql mariadb mssql
 make demo-pg demo-mysql demo-maria demo-mssql
 ```
 
-Connect in `relm`:
+Connect in `picklock`:
 - **PostgreSQL**: engine `postgres`, host `localhost`, port `5432`, user `postgres`, pass `postgres`, db `test`
 - **MySQL**: engine `mysql`, host `localhost`, port `3306`, user `root`, pass `root`, db `test`
 - **MariaDB**: engine `mariadb`, host `localhost`, port `3307`, user `root`, pass `root`, db `test`
@@ -105,7 +105,7 @@ make demo-mongo
 Connect:
 - **Engine**: `mongo`
 - **Host**: `localhost`, **Port**: `27017`, **Database**: `test`
-- Or pass directly: `relm mongodb://localhost:27017/test`
+- Or pass directly: `picklock mongodb://localhost:27017/test`
 
 Features:
 - **Sidebar**: Lists all collections in the database (`users`, `products`, `orders`).
@@ -133,7 +133,7 @@ make demo-redis
 Connect:
 - **Engine**: `redis`
 - **Host**: `localhost`, **Port**: `6379`, **Database**: `0`
-- Or pass directly: `relm redis://localhost:6379/0`
+- Or pass directly: `picklock redis://localhost:6379/0`
 
 Features:
 - **Sidebar**: Non-blocking `SCAN` of keys with type badges (`[string]`, `[hash]`, `[list]`, `[set]`, `[zset]`).
@@ -166,8 +166,8 @@ make demo-cassandra
 
 Connect:
 - **Engine**: `cassandra`
-- **Host**: `localhost`, **Port**: `9042`, **Database** (Keyspace): `relm_demo`
-- Or pass directly: `relm cassandra://localhost:9042/relm_demo`
+- **Host**: `localhost`, **Port**: `9042`, **Database** (Keyspace): `picklock_demo`
+- Or pass directly: `picklock cassandra://localhost:9042/picklock_demo`
 
 Features:
 - **Sidebar**: Tables in the keyspace (`users_by_country`, `sensor_readings`, `store_orders`).
@@ -193,7 +193,7 @@ make demo-neo4j
 Connect:
 - **Engine**: `neo4j`
 - **Host**: `localhost`, **Port**: `7687`, **User**: `neo4j`, **Password**: `password`, **Database**: `neo4j`
-- Or pass directly: `relm neo4j://neo4j:password@localhost:7687/neo4j`
+- Or pass directly: `picklock neo4j://neo4j:password@localhost:7687/neo4j`
 
 Features:
 - **Sidebar**: Node labels (`Person`, `Movie`, `Company`).

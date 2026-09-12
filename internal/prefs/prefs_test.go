@@ -25,7 +25,7 @@ func TestQueryTimeoutNormalizesInvalid(t *testing.T) {
 }
 
 func TestLoadMissingReturnsDefault(t *testing.T) {
-	t.Setenv("RELM_CONFIG_DIR", t.TempDir())
+	t.Setenv("PICKLOCK_CONFIG_DIR", t.TempDir())
 	p, err := Load()
 	if err != nil {
 		t.Fatalf("Load: %v", err)
@@ -36,7 +36,7 @@ func TestLoadMissingReturnsDefault(t *testing.T) {
 }
 
 func TestSaveAndLoadRoundTrip(t *testing.T) {
-	t.Setenv("RELM_CONFIG_DIR", t.TempDir())
+	t.Setenv("PICKLOCK_CONFIG_DIR", t.TempDir())
 
 	p := Default()
 	p.QueryTimeoutSeconds = 120
@@ -70,14 +70,14 @@ func TestDefaultLayoutIsAuto(t *testing.T) {
 
 func TestSaveWrites0600(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("RELM_CONFIG_DIR", dir)
+	t.Setenv("PICKLOCK_CONFIG_DIR", dir)
 
 	p := Default()
 	p.QueryTimeoutSeconds = 30
 	if err := p.Save(); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
-	info, err := os.Stat(filepath.Join(dir, "relm", "prefs.json"))
+	info, err := os.Stat(filepath.Join(dir, "picklock", "prefs.json"))
 	if err != nil {
 		t.Fatalf("stat: %v", err)
 	}

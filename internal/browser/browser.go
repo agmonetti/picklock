@@ -5,7 +5,7 @@ package browser
 import (
 	"context"
 
-	"github.com/agmonetti/relm/internal/store"
+	"github.com/agmonetti/picklock/internal/store"
 )
 
 // PageSizeDefault is the number of items per page.

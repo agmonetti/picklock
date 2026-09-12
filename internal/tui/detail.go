@@ -7,10 +7,10 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/agmonetti/relm/internal/browser"
-	"github.com/agmonetti/relm/internal/store"
-	"github.com/agmonetti/relm/internal/tui/screens"
-	"github.com/agmonetti/relm/internal/tui/styles"
+	"github.com/agmonetti/picklock/internal/browser"
+	"github.com/agmonetti/picklock/internal/store"
+	"github.com/agmonetti/picklock/internal/tui/screens"
+	"github.com/agmonetti/picklock/internal/tui/styles"
 )
 
 // handleDetailKeys handles the keys of the detail view.

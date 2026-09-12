@@ -5,7 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/agmonetti/relm/internal/conn"
+	"github.com/agmonetti/picklock/internal/conn"
 )
 
 // historyPath returns the path of the persistent query history file.
@@ -14,7 +14,15 @@ func historyPath() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(dir, "relm", "history.json"), nil
+	p := filepath.Join(dir, "picklock", "history.json")
+	if _, err := os.Stat(p); err == nil {
+		return p, nil
+	}
+	legacy := filepath.Join(dir, "relm", "history.json")
+	if _, err := os.Stat(legacy); err == nil {
+		return legacy, nil
+	}
+	return p, nil
 }
 
 // LoadHistory reads the queries persisted across sessions. It returns nil when

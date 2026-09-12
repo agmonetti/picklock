@@ -9,22 +9,22 @@ import (
 
 	"go.mongodb.org/mongo-driver/bson"
 
-	"github.com/agmonetti/relm/internal/conn"
-	"github.com/agmonetti/relm/internal/store"
+	"github.com/agmonetti/picklock/internal/conn"
+	"github.com/agmonetti/picklock/internal/store"
 )
 
-// envCfg builds the config from RELM_TEST_MONGODB_* env vars, or skips.
+// envCfg builds the config from PICKLOCK_TEST_MONGODB_* env vars, or skips.
 func envCfg(t *testing.T) conn.ConnectionConfig {
 	t.Helper()
-	host := os.Getenv("RELM_TEST_MONGODB_HOST")
+	host := os.Getenv("PICKLOCK_TEST_MONGODB_HOST")
 	if host == "" {
-		t.Skipf("env RELM_TEST_MONGODB_HOST not set; skipping integration test")
+		t.Skipf("env PICKLOCK_TEST_MONGODB_HOST not set; skipping integration test")
 	}
 	port := 0
-	if p := os.Getenv("RELM_TEST_MONGODB_PORT"); p != "" {
+	if p := os.Getenv("PICKLOCK_TEST_MONGODB_PORT"); p != "" {
 		port, _ = strconv.Atoi(p)
 	}
-	db := os.Getenv("RELM_TEST_MONGODB_DATABASE")
+	db := os.Getenv("PICKLOCK_TEST_MONGODB_DATABASE")
 	if db == "" {
 		db = "test"
 	}
@@ -32,8 +32,8 @@ func envCfg(t *testing.T) conn.ConnectionConfig {
 		Driver:   conn.DriverMongo,
 		Host:     host,
 		Port:     port,
-		User:     os.Getenv("RELM_TEST_MONGODB_USER"),
-		Password: os.Getenv("RELM_TEST_MONGODB_PASSWORD"),
+		User:     os.Getenv("PICKLOCK_TEST_MONGODB_USER"),
+		Password: os.Getenv("PICKLOCK_TEST_MONGODB_PASSWORD"),
 		Database: db,
 	}
 }
@@ -70,7 +70,7 @@ func mongoDrop(t *testing.T, cfg conn.ConnectionConfig, coll string) {
 // the editor find path (offset must be 0 and the limit capped at maxRows).
 func TestIntegration(t *testing.T) {
 	cfg := envCfg(t)
-	const coll = "relm_integration"
+	const coll = "picklock_integration"
 	mongoDrop(t, cfg, coll)
 	mongoSeed(t, cfg, coll, 12)
 
@@ -219,7 +219,7 @@ func TestIntegrationReadOnly(t *testing.T) {
 		t.Errorf("insertOne in read-only: err = %v, want a read-only error", err)
 	}
 
-	const coll = "relm_integration_ro"
+	const coll = "picklock_integration_ro"
 	mongoDrop(t, cfg, coll)
 	mongoSeed(t, cfg, coll, 1)
 	defer mongoDrop(t, cfg, coll)

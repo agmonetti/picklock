@@ -24,7 +24,7 @@ startCommand:
         args.push(config.dsn);
       }
       return {
-        command: 'relm-mcp',
+        command: 'picklock-mcp',
         args: args
       };
     }

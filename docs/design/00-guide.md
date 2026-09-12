@@ -1,10 +1,10 @@
-# relm — documentation for the agent
+# picklock — documentation for the agent
 
-This directory contains everything you need to implement `relm` without asking any questions.
+This directory contains everything you need to implement `picklock` without asking any questions.
 
 ## The core idea (non-negotiable)
 
-`relm` **is not a SQLite browser**. It is a terminal database browser that supports exactly five engines:
+`picklock` **is not a SQLite browser**. It is a terminal database browser that supports exactly five engines:
 
 | Engine | Go package |
 |---|---|
@@ -37,7 +37,7 @@ Guides for the end user (not for the agent):
 
 ## Main instruction
 
-Implement `relm` following the documents in order. Respect the phases of `04-implementation.md` — each phase has a done criterion that must pass before moving on.
+Implement `picklock` following the documents in order. Respect the phases of `04-implementation.md` — each phase has a done criterion that must pass before moving on.
 
 If something is not specified, apply the principle of `01-vision.md`: the simplest and most readable option that fulfills the functionality. No over-engineering.
 
@@ -48,4 +48,4 @@ If something is not specified, apply the principle of `01-vision.md`: the simple
 - **Engines:** SQLite, PostgreSQL, MySQL, MariaDB, SQL Server (drivers listed above)
 - **Testing:** stdlib `testing`, no external frameworks
 - **Test environment:** `compose.yaml` starts the 4 network engines with fixed credentials and the `test` database auto-created (`docker compose up -d`). `make demo` creates an example SQLite database without docker.
-- **Build:** `go build ./cmd/relm/`
+- **Build:** `go build ./cmd/picklock/`

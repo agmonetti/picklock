@@ -1,6 +1,6 @@
 .git
-relm
-relm-mcp
+picklock
+picklock-mcp
 bin/
 demo.db
 assets/

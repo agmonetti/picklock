@@ -4,22 +4,22 @@ import (
 	"os"
 	"testing"
 
-	"github.com/agmonetti/relm/internal/conn"
+	"github.com/agmonetti/picklock/internal/conn"
 )
 
 func envCfg(t *testing.T) conn.ConnectionConfig {
 	t.Helper()
-	host := os.Getenv("RELM_TEST_MSSQL_HOST")
+	host := os.Getenv("PICKLOCK_TEST_MSSQL_HOST")
 	if host == "" {
-		t.Skip("env RELM_TEST_MSSQL_HOST not set; skipping integration test")
+		t.Skip("env PICKLOCK_TEST_MSSQL_HOST not set; skipping integration test")
 	}
 	return conn.ConnectionConfig{
 		Driver:   conn.DriverMSSQL,
 		Host:     host,
 		Port:     1433,
-		User:     os.Getenv("RELM_TEST_MSSQL_USER"),
-		Password: os.Getenv("RELM_TEST_MSSQL_PASSWORD"),
-		Database: os.Getenv("RELM_TEST_MSSQL_DATABASE"),
+		User:     os.Getenv("PICKLOCK_TEST_MSSQL_USER"),
+		Password: os.Getenv("PICKLOCK_TEST_MSSQL_PASSWORD"),
+		Database: os.Getenv("PICKLOCK_TEST_MSSQL_DATABASE"),
 	}
 }
 
@@ -33,28 +33,28 @@ func TestIntegration(t *testing.T) {
 	}
 	defer s.Close()
 
-	if _, err := s.Exec("IF OBJECT_ID('relm_test') IS NOT NULL DROP TABLE relm_test"); err != nil {
+	if _, err := s.Exec("IF OBJECT_ID('picklock_test') IS NOT NULL DROP TABLE picklock_test"); err != nil {
 		t.Fatalf("drop: %v", err)
 	}
-	if _, err := s.Exec("CREATE TABLE relm_test (id INT IDENTITY PRIMARY KEY, name NVARCHAR(255) NOT NULL, email NVARCHAR(255))"); err != nil {
+	if _, err := s.Exec("CREATE TABLE picklock_test (id INT IDENTITY PRIMARY KEY, name NVARCHAR(255) NOT NULL, email NVARCHAR(255))"); err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	if _, err := s.Exec("INSERT INTO relm_test (name, email) VALUES ('Alice','a@t.com'), ('Bob','b@t.com')"); err != nil {
+	if _, err := s.Exec("INSERT INTO picklock_test (name, email) VALUES ('Alice','a@t.com'), ('Bob','b@t.com')"); err != nil {
 		t.Fatalf("insert: %v", err)
 	}
 	t.Cleanup(func() {
-		s.Exec("IF OBJECT_ID('relm_test') IS NOT NULL DROP TABLE relm_test")
+		s.Exec("IF OBJECT_ID('picklock_test') IS NOT NULL DROP TABLE picklock_test")
 	})
 
 	tables, err := s.Tables()
 	if err != nil {
 		t.Fatalf("Tables: %v", err)
 	}
-	if !contains(tables, "relm_test") {
-		t.Errorf("Tables does not include relm_test: %v", tables)
+	if !contains(tables, "picklock_test") {
+		t.Errorf("Tables does not include picklock_test: %v", tables)
 	}
 
-	cols, err := s.Columns("relm_test")
+	cols, err := s.Columns("picklock_test")
 	if err != nil {
 		t.Fatalf("Columns: %v", err)
 	}
@@ -65,7 +65,7 @@ func TestIntegration(t *testing.T) {
 		t.Errorf("constraints: %+v", cols)
 	}
 
-	n, err := s.CountTable("relm_test")
+	n, err := s.CountTable("picklock_test")
 	if err != nil {
 		t.Fatalf("CountTable: %v", err)
 	}
@@ -73,7 +73,7 @@ func TestIntegration(t *testing.T) {
 		t.Errorf("CountTable = %d, want 2", n)
 	}
 
-	page, err := s.SelectTablePage("relm_test", 10, 0)
+	page, err := s.SelectTablePage("picklock_test", 10, 0)
 	if err != nil {
 		t.Fatalf("SelectTablePage: %v", err)
 	}
@@ -82,7 +82,7 @@ func TestIntegration(t *testing.T) {
 	}
 
 	// keyset pagination over the primary key
-	first, err := s.SelectTableKeysetPage("relm_test", "id", 10, "")
+	first, err := s.SelectTableKeysetPage("picklock_test", "id", 10, "")
 	if err != nil {
 		t.Fatalf("SelectTableKeysetPage first: %v", err)
 	}
@@ -90,7 +90,7 @@ func TestIntegration(t *testing.T) {
 		t.Errorf("first keyset page = %v", first.Rows)
 	}
 	last := first.Rows[len(first.Rows)-1][0]
-	second, err := s.SelectTableKeysetPage("relm_test", "id", 10, last)
+	second, err := s.SelectTableKeysetPage("picklock_test", "id", 10, last)
 	if err != nil {
 		t.Fatalf("SelectTableKeysetPage second: %v", err)
 	}

@@ -56,9 +56,12 @@ func FromConfig(cfg ConnectionConfig) SavedConnection {
 	}
 }
 
-// ConfigDir returns the relm config directory. RELM_CONFIG_DIR overrides the
-// OS config dir (also used by the tests).
+// ConfigDir returns the picklock config directory. PICKLOCK_CONFIG_DIR overrides the
+// OS config dir (also used by the tests). RELM_CONFIG_DIR is supported as fallback.
 func ConfigDir() (string, error) {
+	if dir := os.Getenv("PICKLOCK_CONFIG_DIR"); dir != "" {
+		return dir, nil
+	}
 	if dir := os.Getenv("RELM_CONFIG_DIR"); dir != "" {
 		return dir, nil
 	}
@@ -71,7 +74,15 @@ func savedPath() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(dir, "relm", "connections.json"), nil
+	p := filepath.Join(dir, "picklock", "connections.json")
+	if _, err := os.Stat(p); err == nil {
+		return p, nil
+	}
+	legacy := filepath.Join(dir, "relm", "connections.json")
+	if _, err := os.Stat(legacy); err == nil {
+		return legacy, nil
+	}
+	return p, nil
 }
 
 // LoadSaved reads the saved connections. Returns an empty list if it does not exist.

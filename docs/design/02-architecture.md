@@ -3,17 +3,17 @@
 ## Directory structure
 
 ```
-relm/
+picklock/
 ├── cmd/
-│   ├── relm/
+│   ├── picklock/
 │   │   └── main.go          # Entry point. Launches the TUI. No business logic.
 │   └── demo/
 │       └── main.go          # Seeder: demo.db + the 4 network engines (make demo).
 ├── internal/
 │   ├── conn/
 │   │   ├── conn.go          # ConnectionConfig: driver + per-engine fields.
-│   │   ├── parse.go         # ParseDSN: `relm <dsn>` argument → ConnectionConfig.
-│   │   └── saved.go         # Saved connections (JSON in ~/.config/relm/).
+│   │   ├── parse.go         # ParseDSN: `picklock <dsn>` argument → ConnectionConfig.
+│   │   └── saved.go         # Saved connections (JSON in ~/.config/picklock/).
 │   ├── store/
 │   │   ├── store.go         # Store interface, types, engine registration (Register/New).
 │   │   ├── scan.go          # ScanResult + Stringify: database/sql rows → Result.
@@ -36,7 +36,7 @@ relm/
 │   ├── editor/
 │   │   ├── editor.go        # SQL editor state: buffer, history, mode.
 │   │   ├── history.go       # Ring buffer of executed queries (last 100).
-│   │   └── history_file.go  # History persistence (~/.config/relm/history.json).
+│   │   └── history_file.go  # History persistence (~/.config/picklock/history.json).
 │   ├── prefs/
 │   │   └── prefs.go         # Persisted preferences (query timeout, etc).
 │   ├── demo/
@@ -88,7 +88,7 @@ relm/
 
 ## Layers and responsibilities
 
-### `cmd/relm/main.go`
+### `cmd/picklock/main.go`
 
 - Launches `tui.New()` and `bubbletea.Program.Run()`.
 - Handles the exit error with an appropriate exit code.
@@ -225,7 +225,7 @@ func init() { store.Register(conn.DriverSQLite, func(cfg conn.ConnectionConfig) 
 
 - `mysql.NewMySQL` and `mysql.NewMariaDB` share the implementation; they differ in `Version()` and in introspection details where MariaDB diverges.
 - An unknown driver returns `ErrUnsupportedDriver`.
-- `cmd/relm/main.go` blank-imports the 4 engine packages (`_ ".../store/mysql"`, etc.) so they register themselves.
+- `cmd/picklock/main.go` blank-imports the 4 engine packages (`_ ".../store/mysql"`, etc.) so they register themselves.
 
 ### `internal/browser`
 

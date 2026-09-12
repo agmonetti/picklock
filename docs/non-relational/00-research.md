@@ -2,9 +2,9 @@
 
 ## 1. Executive Summary
 
-`relm` was initially designed around a focused premise: a terminal browser for relational databases (SQLite, PostgreSQL, MySQL, MariaDB, SQL Server).
+`picklock` was initially designed around a focused premise: a terminal browser for relational databases (SQLite, PostgreSQL, MySQL, MariaDB, SQL Server).
 
-This research document audits every relational assumption in `relm`'s initial architecture and evaluates non-relational database paradigms (Document, Key-Value / Data Structures, Wide-Column, Graph, and Search/Multi-model) to determine how `relm` can evolve into an extensible **terminal data browser** without forcing non-relational engines into relational concepts.
+This research document audits every relational assumption in `picklock`'s initial architecture and evaluates non-relational database paradigms (Document, Key-Value / Data Structures, Wide-Column, Graph, and Search/Multi-model) to determine how `picklock` can evolve into an extensible **terminal data browser** without forcing non-relational engines into relational concepts.
 
 ---
 
@@ -31,7 +31,7 @@ We investigated candidates across diverse database paradigms against key archite
 1. **Popularity & Usefulness**
 2. **Go Ecosystem Maturity** (Pure Go, license, maintenance)
 3. **Terminal Exploration Suitability** (Can data be inspected interactively from keyboard?)
-4. **Conceptual Diversity** (Does it challenge and improve `relm`'s architecture?)
+4. **Conceptual Diversity** (Does it challenge and improve `picklock`'s architecture?)
 5. **Local Development & CI Feasibility** (Can it be tested deterministically in Docker?)
 
 ### Candidate Evaluation Matrix

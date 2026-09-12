@@ -11,7 +11,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/agmonetti/relm/internal/store"
+	"github.com/agmonetti/picklock/internal/store"
 )
 
 // WriteCSV writes the data view as RFC 4180 CSV.

@@ -7,9 +7,9 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/mattn/go-runewidth"
 
-	"github.com/agmonetti/relm/internal/browser"
-	"github.com/agmonetti/relm/internal/editor"
-	"github.com/agmonetti/relm/internal/tui/styles"
+	"github.com/agmonetti/picklock/internal/browser"
+	"github.com/agmonetti/picklock/internal/editor"
+	"github.com/agmonetti/picklock/internal/tui/styles"
 )
 
 // WorkspaceFocus identifies which pane of the workspace has the keyboard focus.

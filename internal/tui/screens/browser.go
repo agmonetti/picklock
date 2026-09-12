@@ -6,9 +6,9 @@ import (
 
 	"github.com/mattn/go-runewidth"
 
-	"github.com/agmonetti/relm/internal/browser"
-	"github.com/agmonetti/relm/internal/store"
-	"github.com/agmonetti/relm/internal/tui/styles"
+	"github.com/agmonetti/picklock/internal/browser"
+	"github.com/agmonetti/picklock/internal/store"
+	"github.com/agmonetti/picklock/internal/tui/styles"
 )
 
 // SidebarWindow returns the visible window of the sidebar list.

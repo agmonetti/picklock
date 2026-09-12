@@ -1,10 +1,10 @@
-// Command demo creates example datasets to try relm without manual setup:
+// Command demo creates example datasets to try picklock without manual setup:
 //
 //	go run ./cmd/demo                 # SQLite demo.db (no server needed)
 //	go run ./cmd/demo --all           # every engine (relational + non-relational)
 //	go run ./cmd/demo --mongo         # MongoDB collections (users, products, orders)
 //	go run ./cmd/demo --redis         # Redis keys (strings, hashes, lists, sets, zsets)
-//	go run ./cmd/demo --cassandra     # Cassandra keyspace (relm_demo)
+//	go run ./cmd/demo --cassandra     # Cassandra keyspace (picklock_demo)
 //	go run ./cmd/demo --neo4j         # Neo4j graph nodes & relationships
 //	go run ./cmd/demo --postgres      # PostgreSQL
 //
@@ -33,7 +33,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/readpref"
 	_ "modernc.org/sqlite"
 
-	"github.com/agmonetti/relm/internal/demo"
+	"github.com/agmonetti/picklock/internal/demo"
 )
 
 var defaults = map[string]demo.Config{
@@ -43,7 +43,7 @@ var defaults = map[string]demo.Config{
 	"mssql":     {Host: "localhost", Port: 1433, User: "sa", Password: "Str0ng!Passw0rd", Database: "master"},
 	"mongo":     {Host: "localhost", Port: 27017, Database: "test"},
 	"redis":     {Host: "localhost", Port: 6379, Database: "0"},
-	"cassandra": {Host: "localhost", Port: 9042, Database: "relm_demo"},
+	"cassandra": {Host: "localhost", Port: 9042, Database: "picklock_demo"},
 	"neo4j":     {Host: "localhost", Port: 7687, User: "neo4j", Password: "password", Database: "neo4j"},
 }
 
@@ -112,23 +112,23 @@ func any(m map[string]bool) bool {
 func hint(e string) string {
 	switch e {
 	case "sqlite":
-		return "open it with relm (engine SQLite, path demo.db)"
+		return "open it with picklock (engine SQLite, path demo.db)"
 	case "postgres":
-		return "open it with relm (PostgreSQL, localhost:5432, user postgres, database test)"
+		return "open it with picklock (PostgreSQL, localhost:5432, user postgres, database test)"
 	case "mysql":
-		return "open it with relm (MySQL, localhost:3306, user root, database test)"
+		return "open it with picklock (MySQL, localhost:3306, user root, database test)"
 	case "mariadb":
-		return "open it with relm (MariaDB, localhost:3307, user root, database test)"
+		return "open it with picklock (MariaDB, localhost:3307, user root, database test)"
 	case "mssql":
-		return "open it with relm (SQL Server, localhost:1433, user sa, database master)"
+		return "open it with picklock (SQL Server, localhost:1433, user sa, database master)"
 	case "mongo":
-		return "open it with relm (MongoDB, localhost:27017, database test)"
+		return "open it with picklock (MongoDB, localhost:27017, database test)"
 	case "redis":
-		return "open it with relm (Redis, localhost:6379, db 0)"
+		return "open it with picklock (Redis, localhost:6379, db 0)"
 	case "cassandra":
-		return "open it with relm (Cassandra, localhost:9042, keyspace relm_demo)"
+		return "open it with picklock (Cassandra, localhost:9042, keyspace picklock_demo)"
 	case "neo4j":
-		return "open it with relm (Neo4j, localhost:7687, user neo4j, password password)"
+		return "open it with picklock (Neo4j, localhost:7687, user neo4j, password password)"
 	}
 	return ""
 }

@@ -10,20 +10,20 @@ import (
 
 	"github.com/gocql/gocql"
 
-	"github.com/agmonetti/relm/internal/conn"
-	"github.com/agmonetti/relm/internal/store"
+	"github.com/agmonetti/picklock/internal/conn"
+	"github.com/agmonetti/picklock/internal/store"
 )
 
-const itKeyspace = "relm_it_test"
+const itKeyspace = "picklock_it_test"
 
 func cassEnvCfg(t *testing.T) conn.ConnectionConfig {
 	t.Helper()
-	host := os.Getenv("RELM_TEST_CASSANDRA_HOST")
+	host := os.Getenv("PICKLOCK_TEST_CASSANDRA_HOST")
 	if host == "" {
-		t.Skipf("env RELM_TEST_CASSANDRA_HOST not set; skipping integration test")
+		t.Skipf("env PICKLOCK_TEST_CASSANDRA_HOST not set; skipping integration test")
 	}
 	port := 9042
-	if p := os.Getenv("RELM_TEST_CASSANDRA_PORT"); p != "" {
+	if p := os.Getenv("PICKLOCK_TEST_CASSANDRA_PORT"); p != "" {
 		if n, err := strconv.Atoi(p); err == nil && n > 0 {
 			port = n
 		}
@@ -32,8 +32,8 @@ func cassEnvCfg(t *testing.T) conn.ConnectionConfig {
 		Driver:   conn.DriverCassandra,
 		Host:     host,
 		Port:     port,
-		User:     os.Getenv("RELM_TEST_CASSANDRA_USER"),
-		Password: os.Getenv("RELM_TEST_CASSANDRA_PASSWORD"),
+		User:     os.Getenv("PICKLOCK_TEST_CASSANDRA_USER"),
+		Password: os.Getenv("PICKLOCK_TEST_CASSANDRA_PASSWORD"),
 		Database: itKeyspace,
 	}
 }

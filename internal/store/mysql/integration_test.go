@@ -4,7 +4,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/agmonetti/relm/internal/conn"
+	"github.com/agmonetti/picklock/internal/conn"
 )
 
 func envCfg(t *testing.T, prefix string) conn.ConnectionConfig {
@@ -26,14 +26,14 @@ func envCfg(t *testing.T, prefix string) conn.ConnectionConfig {
 
 // TestIntegrationMySQL exercises the engine against a real MySQL.
 func TestIntegrationMySQL(t *testing.T) {
-	cfg := envCfg(t, "RELM_TEST_MYSQL")
+	cfg := envCfg(t, "PICKLOCK_TEST_MYSQL")
 	cfg.Driver = conn.DriverMySQL
 	testStore(t, cfg)
 }
 
 // TestIntegrationMariaDB exercises the engine against a real MariaDB.
 func TestIntegrationMariaDB(t *testing.T) {
-	cfg := envCfg(t, "RELM_TEST_MARIADB")
+	cfg := envCfg(t, "PICKLOCK_TEST_MARIADB")
 	cfg.Driver = conn.DriverMariaDB
 	testStore(t, cfg)
 }
@@ -53,28 +53,28 @@ func testStore(t *testing.T, cfg conn.ConnectionConfig) {
 	}
 	defer s.Close()
 
-	if _, err := s.Exec("DROP TABLE IF EXISTS relm_test"); err != nil {
+	if _, err := s.Exec("DROP TABLE IF EXISTS picklock_test"); err != nil {
 		t.Fatalf("drop: %v", err)
 	}
-	if _, err := s.Exec("CREATE TABLE relm_test (id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(255) NOT NULL, email VARCHAR(255))"); err != nil {
+	if _, err := s.Exec("CREATE TABLE picklock_test (id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(255) NOT NULL, email VARCHAR(255))"); err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	if _, err := s.Exec("INSERT INTO relm_test (name, email) VALUES ('Alice','a@t.com'), ('Bob','b@t.com')"); err != nil {
+	if _, err := s.Exec("INSERT INTO picklock_test (name, email) VALUES ('Alice','a@t.com'), ('Bob','b@t.com')"); err != nil {
 		t.Fatalf("insert: %v", err)
 	}
 	t.Cleanup(func() {
-		s.Exec("DROP TABLE IF EXISTS relm_test")
+		s.Exec("DROP TABLE IF EXISTS picklock_test")
 	})
 
 	tables, err := s.Tables()
 	if err != nil {
 		t.Fatalf("Tables: %v", err)
 	}
-	if !contains(tables, "relm_test") {
-		t.Errorf("Tables does not include relm_test: %v", tables)
+	if !contains(tables, "picklock_test") {
+		t.Errorf("Tables does not include picklock_test: %v", tables)
 	}
 
-	cols, err := s.Columns("relm_test")
+	cols, err := s.Columns("picklock_test")
 	if err != nil {
 		t.Fatalf("Columns: %v", err)
 	}
@@ -85,7 +85,7 @@ func testStore(t *testing.T, cfg conn.ConnectionConfig) {
 		t.Errorf("constraints: %+v", cols)
 	}
 
-	n, err := s.CountTable("relm_test")
+	n, err := s.CountTable("picklock_test")
 	if err != nil {
 		t.Fatalf("CountTable: %v", err)
 	}
@@ -93,7 +93,7 @@ func testStore(t *testing.T, cfg conn.ConnectionConfig) {
 		t.Errorf("CountTable = %d, want 2", n)
 	}
 
-	page, err := s.SelectTablePage("relm_test", 10, 0)
+	page, err := s.SelectTablePage("picklock_test", 10, 0)
 	if err != nil {
 		t.Fatalf("SelectTablePage: %v", err)
 	}
@@ -102,7 +102,7 @@ func testStore(t *testing.T, cfg conn.ConnectionConfig) {
 	}
 
 	// keyset pagination over the primary key
-	first, err := s.SelectTableKeysetPage("relm_test", "id", 10, "")
+	first, err := s.SelectTableKeysetPage("picklock_test", "id", 10, "")
 	if err != nil {
 		t.Fatalf("SelectTableKeysetPage first: %v", err)
 	}
@@ -110,7 +110,7 @@ func testStore(t *testing.T, cfg conn.ConnectionConfig) {
 		t.Errorf("first keyset page = %v", first.Rows)
 	}
 	last := first.Rows[len(first.Rows)-1][0]
-	second, err := s.SelectTableKeysetPage("relm_test", "id", 10, last)
+	second, err := s.SelectTableKeysetPage("picklock_test", "id", 10, last)
 	if err != nil {
 		t.Fatalf("SelectTableKeysetPage second: %v", err)
 	}
@@ -131,8 +131,8 @@ func TestIntegrationTLSOptions(t *testing.T) {
 		driver conn.Driver
 		prefix string
 	}{
-		{conn.DriverMySQL, "RELM_TEST_MYSQL"},
-		{conn.DriverMariaDB, "RELM_TEST_MARIADB"},
+		{conn.DriverMySQL, "PICKLOCK_TEST_MYSQL"},
+		{conn.DriverMariaDB, "PICKLOCK_TEST_MARIADB"},
 	}
 	for _, d := range drivers {
 		t.Run(string(d.driver), func(t *testing.T) {
@@ -176,9 +176,9 @@ func contains(list []string, s string) bool {
 func TestIntegrationReadOnly(t *testing.T) {
 	for _, driver := range []conn.Driver{conn.DriverMySQL, conn.DriverMariaDB} {
 		t.Run(string(driver), func(t *testing.T) {
-			prefix := "RELM_TEST_MYSQL"
+			prefix := "PICKLOCK_TEST_MYSQL"
 			if driver == conn.DriverMariaDB {
-				prefix = "RELM_TEST_MARIADB"
+				prefix = "PICKLOCK_TEST_MARIADB"
 			}
 			cfg := envCfg(t, prefix)
 			cfg.Driver = driver
@@ -193,13 +193,13 @@ func TestIntegrationReadOnly(t *testing.T) {
 			if err != nil {
 				t.Fatalf("New: %v", err)
 			}
-			if _, err := w.Exec("DROP TABLE IF EXISTS relm_ro_test"); err != nil {
+			if _, err := w.Exec("DROP TABLE IF EXISTS picklock_ro_test"); err != nil {
 				t.Fatalf("drop: %v", err)
 			}
-			if _, err := w.Exec("CREATE TABLE relm_ro_test (id INT)"); err != nil {
+			if _, err := w.Exec("CREATE TABLE picklock_ro_test (id INT)"); err != nil {
 				t.Fatalf("create: %v", err)
 			}
-			if n, err := w.Exec("INSERT INTO relm_ro_test VALUES (1)"); err != nil || n != 1 {
+			if n, err := w.Exec("INSERT INTO picklock_ro_test VALUES (1)"); err != nil || n != 1 {
 				t.Fatalf("seed insert: n=%d err=%v", n, err)
 			}
 			w.Close()
@@ -212,10 +212,10 @@ func TestIntegrationReadOnly(t *testing.T) {
 			}
 			defer ro.Close()
 
-			if _, err := ro.Exec("INSERT INTO relm_ro_test VALUES (2)"); err == nil {
+			if _, err := ro.Exec("INSERT INTO picklock_ro_test VALUES (2)"); err == nil {
 				t.Error("write must fail in read-only mode")
 			}
-			if n, err := ro.CountTable("relm_ro_test"); err != nil || n != 1 {
+			if n, err := ro.CountTable("picklock_ro_test"); err != nil || n != 1 {
 				t.Errorf("read in read-only mode: n=%d err=%v, want 1", n, err)
 			}
 		})

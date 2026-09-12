@@ -2,7 +2,7 @@
 
 ## 1. Engine Directory
 
-`relm` supports nine engines across four distinct database paradigms:
+`picklock` supports nine engines across four distinct database paradigms:
 
 | Engine | Paradigm | Driver | License | Default Port | Default Query Language |
 |---|---|---|---|---|---|
@@ -21,7 +21,7 @@
 ## 2. In-Depth Engine Profiles
 
 ### 1. MongoDB (Document Paradigm)
-- **Why Included**: MongoDB is the world's most widely used document database. It introduces hierarchical JSON/BSON structures that stress-test whether `relm` can display nested data without flattening.
+- **Why Included**: MongoDB is the world's most widely used document database. It introduces hierarchical JSON/BSON structures that stress-test whether `picklock` can display nested data without flattening.
 - **Go Ecosystem**: Official `go.mongodb.org/mongo-driver/v2/mongo` package provides idiomatic, high-performance, pure Go connectivity with full BSON codec support.
 - **Catalog Model**: Lists collections in the target database (`Database.ListCollectionNames`).
 - **Browsing Model**: Queries documents using `collection.Find()` with limit and cursor/skip pagination. Documents are serialized to `DocumentItem` with compact preview summaries and indented JSON.
@@ -29,7 +29,7 @@
 - **Query Model**: Executes JSON filter objects (`{"status": "active"}`), aggregation pipelines (`[{"$match": ...}]`), or find wrappers (`find(...)`).
 
 ### 2. Redis (Key-Value & Data Structures Paradigm)
-- **Why Included**: Redis represents key-value and in-memory data structures. It prevents `relm` from assuming all data sources are table-oriented.
+- **Why Included**: Redis represents key-value and in-memory data structures. It prevents `picklock` from assuming all data sources are table-oriented.
 - **Go Ecosystem**: `github.com/redis/go-redis/v9` is the standard, battle-tested Go client.
 - **Catalog Model**: Discovers keys safely with cursor iteration via `SCAN 0 COUNT 100` with optional key pattern filtering. **Never issues `KEYS *`**.
 - **Browsing Model**: Inspects the active key's native data type via `TYPE` and fetches entries:

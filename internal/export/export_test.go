@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/agmonetti/relm/internal/store"
+	"github.com/agmonetti/picklock/internal/store"
 )
 
 func res(cols []string, rows [][]string, nulls [][]bool) *store.TabularData {

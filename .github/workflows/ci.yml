@@ -55,22 +55,22 @@ jobs:
 
       - name: integration tests
         env:
-          RELM_TEST_POSTGRES_HOST: localhost
-          RELM_TEST_POSTGRES_USER: postgres
-          RELM_TEST_POSTGRES_PASSWORD: postgres
-          RELM_TEST_POSTGRES_DATABASE: test
-          RELM_TEST_MYSQL_HOST: localhost
-          RELM_TEST_MYSQL_USER: root
-          RELM_TEST_MYSQL_PASSWORD: root
-          RELM_TEST_MYSQL_DATABASE: test
-          RELM_TEST_MARIADB_HOST: localhost
-          RELM_TEST_MARIADB_USER: root
-          RELM_TEST_MARIADB_PASSWORD: root
-          RELM_TEST_MARIADB_DATABASE: test
-          RELM_TEST_MSSQL_HOST: localhost
-          RELM_TEST_MSSQL_USER: sa
-          RELM_TEST_MSSQL_PASSWORD: "Str0ng!Passw0rd"
-          RELM_TEST_MSSQL_DATABASE: master
+          PICKLOCK_TEST_POSTGRES_HOST: localhost
+          PICKLOCK_TEST_POSTGRES_USER: postgres
+          PICKLOCK_TEST_POSTGRES_PASSWORD: postgres
+          PICKLOCK_TEST_POSTGRES_DATABASE: test
+          PICKLOCK_TEST_MYSQL_HOST: localhost
+          PICKLOCK_TEST_MYSQL_USER: root
+          PICKLOCK_TEST_MYSQL_PASSWORD: root
+          PICKLOCK_TEST_MYSQL_DATABASE: test
+          PICKLOCK_TEST_MARIADB_HOST: localhost
+          PICKLOCK_TEST_MARIADB_USER: root
+          PICKLOCK_TEST_MARIADB_PASSWORD: root
+          PICKLOCK_TEST_MARIADB_DATABASE: test
+          PICKLOCK_TEST_MSSQL_HOST: localhost
+          PICKLOCK_TEST_MSSQL_USER: sa
+          PICKLOCK_TEST_MSSQL_PASSWORD: "Str0ng!Passw0rd"
+          PICKLOCK_TEST_MSSQL_DATABASE: master
         run: go test -timeout 300s ./internal/store/...
 
       - name: teardown

@@ -60,9 +60,9 @@ representative at an online or offline event.
 
 Instances of abusive, harassing, or otherwise unacceptable behavior may be
 reported to the community leaders responsible for enforcement via GitHub's
-[private vulnerability reporting](https://github.com/agmonetti/relm/security/advisories)
+[private vulnerability reporting](https://github.com/agmonetti/picklock/security/advisories)
 or by opening a GitHub issue on
-[github.com/agmonetti/relm](https://github.com/agmonetti/relm/issues).
+[github.com/agmonetti/picklock](https://github.com/agmonetti/picklock/issues).
 All complaints will be reviewed and investigated promptly and fairly.
 
 All community leaders are obligated to respect the privacy and security of the

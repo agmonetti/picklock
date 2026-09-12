@@ -1,7 +1,7 @@
-BINARY     := relm
-MCP_BINARY := relm-mcp
-PKG        := ./cmd/relm
-MCP_PKG    := ./cmd/relm-mcp
+BINARY     := picklock
+MCP_BINARY := picklock-mcp
+PKG        := ./cmd/picklock
+MCP_PKG    := ./cmd/picklock-mcp
 
 .PHONY: build build-mcp test lint clean demo demo-pg demo-mysql demo-maria demo-mssql demo-mongo demo-redis demo-cassandra demo-neo4j demo-all
 
@@ -20,7 +20,7 @@ lint:
 
 # Creates the example database. Without a target it seeds SQLite (demo.db, no
 # server needed); the network engines need their server running first
-# (docker compose up -d). Usage: make demo && ./bin/relm
+# (docker compose up -d). Usage: make demo && ./bin/picklock
 demo:
 	go run ./cmd/demo
 

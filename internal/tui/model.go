@@ -1,4 +1,4 @@
-// Package tui implements the bubbletea loop for relm.
+// Package tui implements the bubbletea loop for picklock.
 package tui
 
 import (
@@ -9,13 +9,13 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/agmonetti/relm/internal/browser"
-	"github.com/agmonetti/relm/internal/conn"
-	"github.com/agmonetti/relm/internal/editor"
-	"github.com/agmonetti/relm/internal/prefs"
-	"github.com/agmonetti/relm/internal/store"
-	"github.com/agmonetti/relm/internal/tui/screens"
-	"github.com/agmonetti/relm/internal/tui/styles"
+	"github.com/agmonetti/picklock/internal/browser"
+	"github.com/agmonetti/picklock/internal/conn"
+	"github.com/agmonetti/picklock/internal/editor"
+	"github.com/agmonetti/picklock/internal/prefs"
+	"github.com/agmonetti/picklock/internal/store"
+	"github.com/agmonetti/picklock/internal/tui/screens"
+	"github.com/agmonetti/picklock/internal/tui/styles"
 )
 
 // FlashMessageDuration defines how long flash notices (warnings, success, error) remain visible.
@@ -50,7 +50,7 @@ type editorDoneMsg struct {
 // NewOpts configures the initial model. A zero value is a plain start.
 type NewOpts struct {
 	// InitialCfg connects immediately on startup, skipping the connection
-	// screen (used by `relm <dsn>`). A connection error lands on the form.
+	// screen (used by `picklock <dsn>`). A connection error lands on the form.
 	InitialCfg *conn.ConnectionConfig
 	// GlobalReadOnly forces read-only connections for every engine, even those
 	// made from the form or saved connections (used by `--read-only`).

@@ -14,7 +14,7 @@ The agent must implement in this exact order. Each phase has verifiable "done" c
 
 ### Tasks
 
-1. Initialize module: `go mod init github.com/agmonetti/relm`
+1. Initialize module: `go mod init github.com/agmonetti/picklock`
 2. Add core dependencies:
    ```
    go get github.com/charmbracelet/bubbletea
@@ -37,15 +37,15 @@ The agent must implement in this exact order. Each phase has verifiable "done" c
 9. Implement the engine registry in `internal/store/store.go`:
    - `Register(driver, constructor)` + `New(cfg)` that looks it up in the registry.
    - `sqlite` registers itself in its `init()`.
-10. Implement `cmd/relm/main.go`:
+10. Implement `cmd/picklock/main.go`:
     - Launches the TUI (doesn't exist yet — for now it prints `"scaffold ok"` and exits).
-    - Imports the engine blank (`_ "relm/internal/store/sqlite"`) so it gets registered.
+    - Imports the engine blank (`_ "picklock/internal/store/sqlite"`) so it gets registered.
     - Smoke tests: open a SQLite file with `store.New` and list tables to stdout (temporary, to verify).
 
 ### Done criteria
 
 ```bash
-$ go build ./cmd/relm/
+$ go build ./cmd/picklock/
 $ echo "" | sqlite3 test.db "CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT);"
 $ go test ./internal/store/... ./internal/conn/...
 # PASS
@@ -134,7 +134,7 @@ $ go test ./internal/editor/...
    - `Update()` — handles `connectMsg` (creates store, loads browser, switches to `ScreenBrowser`), `tea.KeyMsg`, `tea.WindowSizeMsg`.
    - `View()` — renders header + content + footer according to the active screen.
 6. Implement `internal/conn/saved.go`:
-   - Save/read connections in `~/.config/relm/connections.json` (chmod 0600).
+   - Save/read connections in `~/.config/picklock/connections.json` (chmod 0600).
    - `Ctrl+S` saves, the list is shown in the left connection panel.
 7. Update `main.go` to launch `tea.NewProgram(tui.New())`.
 8. Implement `internal/tui/screens/structure.go` (minimal functionality: columns; indexes in phase 6).
@@ -142,9 +142,9 @@ $ go test ./internal/editor/...
 ### Done criteria
 
 ```bash
-$ go build ./cmd/relm/
+$ go build ./cmd/picklock/
 $ echo "" | sqlite3 test.db "CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT); CREATE TABLE orders (id INTEGER PRIMARY KEY);"
-$ ./relm
+$ ./picklock
 # Should show the connection screen.
 # Engine SQLite + path test.db + Enter → browser with sidebar [orders, users].
 # Navigate with ↑↓, q to quit.
@@ -172,7 +172,7 @@ $ go test ./internal/...
 ### Done criteria
 
 ```bash
-$ ./relm
+$ ./picklock
 # Connect to test.db → Tab opens the editor.
 # Type "SELECT * FROM users;" and Ctrl+R shows the results.
 # Type an invalid query and Ctrl+R shows the error in red without crashing.
@@ -209,7 +209,7 @@ $ ./relm
 
 ## Phase 7 — The other four engines
 
-**Goal:** `relm` supports PostgreSQL, MySQL, MariaDB and SQL Server with the SAME UI. Nothing outside `internal/store/**` changes.
+**Goal:** `picklock` supports PostgreSQL, MySQL, MariaDB and SQL Server with the SAME UI. Nothing outside `internal/store/**` changes.
 
 ### Tasks
 
@@ -226,13 +226,13 @@ $ ./relm
    - Driver: `microsoft/go-mssqldb`.
    - `dialect.go`: `[ident]`, `OFFSET m ROWS FETCH NEXT n ROWS ONLY`, introspection with `INFORMATION_SCHEMA` + `sys.indexes`.
    - `Version()` via `SELECT @@VERSION`.
-4. Register the five drivers in the `store` registry (each engine in its `init()`) and import them blank from `cmd/relm/main.go`.
+4. Register the five drivers in the `store` registry (each engine in its `init()`) and import them blank from `cmd/picklock/main.go`.
 5. Per-engine integration tests (see `05-technical-decisions.md`): triggered by env vars, with real DBs in docker. The repo's `compose.yaml` starts the 4 engines with fixed credentials and the auto-created `test` database:
    ```bash
    docker compose up -d
    docker compose ps   # all 4 must be healthy
    ```
-   Tests skip (`t.Skip`) if the env var is not set. Env vars: `RELM_TEST_POSTGRES_HOST` / `_USER` / `_PASSWORD` / `_DATABASE` (same for `MYSQL`, `MARIADB`, `MSSQL`).
+   Tests skip (`t.Skip`) if the env var is not set. Env vars: `PICKLOCK_TEST_POSTGRES_HOST` / `_USER` / `_PASSWORD` / `_DATABASE` (same for `MYSQL`, `MARIADB`, `MSSQL`).
 
 ### Done criteria
 
@@ -240,7 +240,7 @@ $ ./relm
 $ go test ./internal/store/...   # includes integration if env vars are set
 $ go test ./internal/browser/... ./internal/editor/... ./internal/conn/...
 # PASS — without changing ANYTHING in the browser/editor/TUI between engines.
-$ ./relm
+$ ./picklock
 # Connect to each of the 4 engines in docker and verify:
 #   - sidebar with correct tables
 #   - row navigation with pagination

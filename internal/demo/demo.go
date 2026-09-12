@@ -1,4 +1,4 @@
-// Package demo generates the example schema and data that relm shows when you
+// Package demo generates the example schema and data that picklock shows when you
 // first open it (users, orders, products, payments, logs, ...). It seeds any of
 // the five engines from the same deterministic dataset, so every engine can be
 // tried with a real amount of data: pagination, keyset browsing, auto-refresh
@@ -29,7 +29,7 @@ type Config struct {
 	SSLMode string
 }
 
-// DriverName maps a relm engine to the database/sql driver name to open.
+// DriverName maps a picklock engine to the database/sql driver name to open.
 func DriverName(driver string) string {
 	switch driver {
 	case "postgres":
@@ -229,7 +229,7 @@ var schema = []tableSpec{
 	}},
 }
 
-// q returns an engine-quoted identifier, mirroring relm's QuoteIdent dialects.
+// q returns an engine-quoted identifier, mirroring picklock's QuoteIdent dialects.
 // MySQL backticks and SQL Server brackets also protect reserved words like
 // `key` and `read`; the other engines accept the plain lowercase names.
 func q(driver, name string) string {

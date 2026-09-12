@@ -1,4 +1,4 @@
-module github.com/agmonetti/relm
+module github.com/agmonetti/picklock
 
 go 1.26.6
 

@@ -6,7 +6,7 @@ It is the first screen when opening the tool. lazyvim style: logo centered on to
 
 ```
 ┌─────────────────────────────────────────────┐
-│ relm [no connection]                        │
+│ picklock [no connection]                        │
 ├─────────────────────────────────────────────┤
 │                _____  ______  _      __  __ │
 │               |  __ \|  ____|| |    |  \/  |│
@@ -72,7 +72,7 @@ The terminal is divided into fixed zones:
 ```
 ┌─────────────────────────────────────────────┐
 │ HEADER (1 line)                             │
-│ relm [ postgres@localhost:5432/mydb ] [ users ] [ browser ] │
+│ picklock [ postgres@localhost:5432/mydb ] [ users ] [ browser ] │
 ├──────────────┬──────────────────────────────┤
 │              │ MAIN PANE (browser/structure)│
 │  SIDEBAR     │                              │
@@ -93,8 +93,8 @@ accent border. There is no screen switching.
 - The header is always visible. Its values are bracketed **pills**: the app
   name, then a yellow pill for the connection and a purple pill for the active
   table, with black text on a solid background:
-  - Network: `relm [ postgres@localhost:5432/mydb ] [ users ]`
-  - SQLite: `relm [ sqlite /data/app.db ] [ users ]`
+  - Network: `picklock [ postgres@localhost:5432/mydb ] [ users ]`
+  - SQLite: `picklock [ sqlite /data/app.db ] [ users ]`
   - No connection / no open table: the pill stays muted text without a background.
   - There is no mode pill: the focused pane already marks itself with its accent
     border, so `[ browser ]` / `[ tables ]` / `[ editor ]` would be redundant.
@@ -245,7 +245,7 @@ appear below, separated by a line.
 ### Export prompt (`Alt+E`)
 
 `Alt+E` from the workspace opens a centered prompt with a single text input for
-the target file name, pre-filled with `relm-export-<timestamp>.csv`. The format
+the target file name, pre-filled with `picklock-export-<timestamp>.csv`. The format
 is taken from the extension (`.json` → JSON, otherwise CSV). `Enter` writes the
 file and closes the prompt showing `exported N rows → /abs/path` in green;
 `Esc` cancels. Data source: the last query result when the editor is focused,

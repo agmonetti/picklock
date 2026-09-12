@@ -6,8 +6,8 @@ func TestParseDSN_SQLite(t *testing.T) {
 	cases := map[string]string{
 		"./app.db":       "./app.db",
 		"/data/app.db":   "/data/app.db",
-		"relm.db":        "relm.db",
-		"sqlite:relm.db": "relm.db",
+		"picklock.db":        "picklock.db",
+		"sqlite:picklock.db": "picklock.db",
 		"sqlite:/a/b.db": "/a/b.db",
 		"file:/a/b.db":   "/a/b.db",
 	}

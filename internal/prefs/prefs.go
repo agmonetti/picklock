@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/agmonetti/relm/internal/conn"
+	"github.com/agmonetti/picklock/internal/conn"
 )
 
 // QueryTimeoutDefault is the default query timeout in seconds.
@@ -86,5 +86,13 @@ func prefsPath() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(dir, "relm", "prefs.json"), nil
+	p := filepath.Join(dir, "picklock", "prefs.json")
+	if _, err := os.Stat(p); err == nil {
+		return p, nil
+	}
+	legacy := filepath.Join(dir, "relm", "prefs.json")
+	if _, err := os.Stat(legacy); err == nil {
+		return legacy, nil
+	}
+	return p, nil
 }

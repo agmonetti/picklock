@@ -11,11 +11,11 @@ import (
 // history is never touched by a test.
 func withTempConfigDir(t *testing.T) {
 	t.Helper()
-	t.Setenv("RELM_CONFIG_DIR", t.TempDir())
+	t.Setenv("PICKLOCK_CONFIG_DIR", t.TempDir())
 }
 
 func historyFilePath() string {
-	return filepath.Join(os.Getenv("RELM_CONFIG_DIR"), "relm", "history.json")
+	return filepath.Join(os.Getenv("PICKLOCK_CONFIG_DIR"), "picklock", "history.json")
 }
 
 func TestHistoryFile_RoundTrip(t *testing.T) {

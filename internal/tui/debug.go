@@ -6,15 +6,15 @@ import (
 
 	term "github.com/charmbracelet/x/term"
 
-	"github.com/agmonetti/relm/internal/browser"
-	"github.com/agmonetti/relm/internal/editor"
-	"github.com/agmonetti/relm/internal/store"
-	"github.com/agmonetti/relm/internal/tui/screens"
+	"github.com/agmonetti/picklock/internal/browser"
+	"github.com/agmonetti/picklock/internal/editor"
+	"github.com/agmonetti/picklock/internal/store"
+	"github.com/agmonetti/picklock/internal/tui/screens"
 )
 
 // PrintLayout renders the connection screen and a sample workspace as plain
 // text (no TUI) together with the terminal size the app would use. It is meant
-// to diagnose layout problems on any terminal: `relm --print-layout`. A zero
+// to diagnose layout problems on any terminal: `picklock --print-layout`. A zero
 // width/height detects the real terminal (120x30 when not a TTY); a positive
 // value forces the size, which makes layout bugs reproducible in CI.
 func PrintLayout(width, height int) int {

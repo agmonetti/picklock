@@ -14,14 +14,14 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	_ "modernc.org/sqlite"
 
-	"github.com/agmonetti/relm/internal/conn"
-	"github.com/agmonetti/relm/internal/prefs"
-	"github.com/agmonetti/relm/internal/store"
-	_ "github.com/agmonetti/relm/internal/store/mssql"
-	_ "github.com/agmonetti/relm/internal/store/mysql" // registers the engines for the tests
-	_ "github.com/agmonetti/relm/internal/store/postgres"
-	_ "github.com/agmonetti/relm/internal/store/sqlite"
-	"github.com/agmonetti/relm/internal/tui/screens"
+	"github.com/agmonetti/picklock/internal/conn"
+	"github.com/agmonetti/picklock/internal/prefs"
+	"github.com/agmonetti/picklock/internal/store"
+	_ "github.com/agmonetti/picklock/internal/store/mssql"
+	_ "github.com/agmonetti/picklock/internal/store/mysql" // registers the engines for the tests
+	_ "github.com/agmonetti/picklock/internal/store/postgres"
+	_ "github.com/agmonetti/picklock/internal/store/sqlite"
+	"github.com/agmonetti/picklock/internal/tui/screens"
 )
 
 // Cursor blink, spinner wait, and flash message timers would block the synchronous step()
@@ -35,11 +35,11 @@ func init() {
 // TestMain isolates every test from the real user configuration: saved
 // connections, prefs and the query history all read/write a throwaway dir.
 func TestMain(m *testing.M) {
-	dir, err := os.MkdirTemp("", "relm-tui-test")
+	dir, err := os.MkdirTemp("", "picklock-tui-test")
 	if err != nil {
 		panic(err)
 	}
-	os.Setenv("RELM_CONFIG_DIR", dir)
+	os.Setenv("PICKLOCK_CONFIG_DIR", dir)
 	code := m.Run()
 	os.RemoveAll(dir)
 	os.Exit(code)
@@ -196,7 +196,7 @@ func TestModel_StartsOnConnect(t *testing.T) {
 		t.Fatalf("screen = %d, want ScreenConnect", m.screen)
 	}
 	v := m.View()
-	if !strings.Contains(v, "relm") || !strings.Contains(v, "Connect") {
+	if !strings.Contains(v, "picklock") || !strings.Contains(v, "Connect") {
 		t.Errorf("View does not show the connection screen: %q", v)
 	}
 }
@@ -312,7 +312,7 @@ func TestModel_SidebarFirstLast(t *testing.T) {
 }
 
 func TestModel_OpenSettingsAndSave(t *testing.T) {
-	t.Setenv("RELM_CONFIG_DIR", t.TempDir())
+	t.Setenv("PICKLOCK_CONFIG_DIR", t.TempDir())
 	m := connect(t)
 
 	pressKey(t, m, "ctrl+p")
@@ -386,7 +386,7 @@ func mouseMsg(x, y int, button tea.MouseButton, action tea.MouseAction) tea.Mous
 // divider is at workspace x=19 (terminal x=20) and the editor divider at
 // workspace y=16 (terminal y=18).
 func TestModel_RightDragResizesSidebar(t *testing.T) {
-	t.Setenv("RELM_CONFIG_DIR", t.TempDir())
+	t.Setenv("PICKLOCK_CONFIG_DIR", t.TempDir())
 	m := connect(t)
 
 	step(t, m, mouseMsg(20, 5, tea.MouseButtonRight, tea.MouseActionPress))
@@ -412,7 +412,7 @@ func TestModel_RightDragResizesSidebar(t *testing.T) {
 }
 
 func TestModel_RightDragResizesEditor(t *testing.T) {
-	t.Setenv("RELM_CONFIG_DIR", t.TempDir())
+	t.Setenv("PICKLOCK_CONFIG_DIR", t.TempDir())
 	m := connect(t)
 
 	step(t, m, mouseMsg(50, 18, tea.MouseButtonRight, tea.MouseActionPress))
@@ -461,7 +461,7 @@ func TestModel_LeftClickFocusesPane(t *testing.T) {
 }
 
 func TestModel_DetailView(t *testing.T) {
-	t.Setenv("RELM_CONFIG_DIR", t.TempDir())
+	t.Setenv("PICKLOCK_CONFIG_DIR", t.TempDir())
 	m := connect(t)
 	press(t, m, "2")    // open users
 	pressAlt(t, m, "2") // focus main
@@ -484,7 +484,7 @@ func TestModel_DetailView(t *testing.T) {
 }
 
 func TestModel_DetailViewShowsLongValue(t *testing.T) {
-	t.Setenv("RELM_CONFIG_DIR", t.TempDir())
+	t.Setenv("PICKLOCK_CONFIG_DIR", t.TempDir())
 	m := connect(t)
 	// insert a row whose first column is very long and select it
 	execSQL(t, m, "INSERT INTO orders (id) VALUES (999)")
@@ -507,7 +507,7 @@ func TestModel_DetailViewShowsLongValue(t *testing.T) {
 }
 
 func TestModel_DetailView_ColumnOrdering(t *testing.T) {
-	t.Setenv("RELM_CONFIG_DIR", t.TempDir())
+	t.Setenv("PICKLOCK_CONFIG_DIR", t.TempDir())
 	m := connect(t)
 	press(t, m, "2") // open users
 
@@ -547,7 +547,7 @@ func TestModel_DetailView_ColumnOrdering(t *testing.T) {
 }
 
 func TestModel_DetailView_NavigateAndCopy(t *testing.T) {
-	t.Setenv("RELM_CONFIG_DIR", t.TempDir())
+	t.Setenv("PICKLOCK_CONFIG_DIR", t.TempDir())
 	m := connect(t)
 	press(t, m, "2")    // open users
 	pressAlt(t, m, "2") // focus main
@@ -634,7 +634,7 @@ func TestModel_ClickFocusesConnectField(t *testing.T) {
 }
 
 func TestModel_MouseIgnoredOnConnectScreen(t *testing.T) {
-	t.Setenv("RELM_CONFIG_DIR", t.TempDir()) // don't depend on the user's prefs
+	t.Setenv("PICKLOCK_CONFIG_DIR", t.TempDir()) // don't depend on the user's prefs
 	m := newModel(t)                         // starts on the connect screen
 	m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
 
@@ -661,7 +661,7 @@ func TestModel_EscClosesHelp(t *testing.T) {
 }
 
 func TestModel_WheelScrollsSidebar(t *testing.T) {
-	t.Setenv("RELM_CONFIG_DIR", t.TempDir()) // deterministic pane geometry
+	t.Setenv("PICKLOCK_CONFIG_DIR", t.TempDir()) // deterministic pane geometry
 	m := connect(t)
 	for i := 0; i < 30; i++ {
 		execSQL(t, m, fmt.Sprintf("CREATE TABLE t%02d (id INTEGER PRIMARY KEY)", i))
@@ -683,7 +683,7 @@ func TestModel_WheelScrollsSidebar(t *testing.T) {
 }
 
 func TestModel_WheelScrollsMain(t *testing.T) {
-	t.Setenv("RELM_CONFIG_DIR", t.TempDir())
+	t.Setenv("PICKLOCK_CONFIG_DIR", t.TempDir())
 	m := connect(t)
 	for i := 0; i < 60; i++ {
 		execSQL(t, m, fmt.Sprintf("INSERT INTO users (name, email) VALUES ('u%d','u%d@t.com')", i, i))
@@ -705,7 +705,7 @@ func TestModel_WheelScrollsMain(t *testing.T) {
 }
 
 func TestModel_WheelScrollsResults(t *testing.T) {
-	t.Setenv("RELM_CONFIG_DIR", t.TempDir())
+	t.Setenv("PICKLOCK_CONFIG_DIR", t.TempDir())
 	m := connect(t)
 	m.editor.Data = &store.TabularData{Columns: []string{"c"}, Rows: make([][]string, 60)}
 	m.editorScreen.ResetResult()
@@ -721,7 +721,7 @@ func TestModel_WheelScrollsResults(t *testing.T) {
 }
 
 func TestModel_ClickSelectsSidebarTable(t *testing.T) {
-	t.Setenv("RELM_CONFIG_DIR", t.TempDir())
+	t.Setenv("PICKLOCK_CONFIG_DIR", t.TempDir())
 	m := connect(t)
 	for i := 0; i < 30; i++ {
 		execSQL(t, m, fmt.Sprintf("CREATE TABLE t%02d (id INTEGER PRIMARY KEY)", i))
@@ -736,7 +736,7 @@ func TestModel_ClickSelectsSidebarTable(t *testing.T) {
 }
 
 func TestModel_ClickSelectsMainRow(t *testing.T) {
-	t.Setenv("RELM_CONFIG_DIR", t.TempDir())
+	t.Setenv("PICKLOCK_CONFIG_DIR", t.TempDir())
 	m := connect(t)
 	for i := 0; i < 10; i++ {
 		execSQL(t, m, fmt.Sprintf("INSERT INTO users (name, email) VALUES ('u%d','u%d@t.com')", i, i))
@@ -753,7 +753,7 @@ func TestModel_ClickSelectsMainRow(t *testing.T) {
 }
 
 func TestModel_ClickSelectsResultRow(t *testing.T) {
-	t.Setenv("RELM_CONFIG_DIR", t.TempDir())
+	t.Setenv("PICKLOCK_CONFIG_DIR", t.TempDir())
 	m := connect(t)
 	m.editor.Data = &store.TabularData{Columns: []string{"c"}, Rows: make([][]string, 60)}
 	m.editorScreen.ResetResult()
@@ -1134,7 +1134,7 @@ func TestModel_ZoomPane(t *testing.T) {
 }
 
 func TestModel_SaveAndDeleteSavedConnection(t *testing.T) {
-	t.Setenv("RELM_CONFIG_DIR", t.TempDir())
+	t.Setenv("PICKLOCK_CONFIG_DIR", t.TempDir())
 
 	m := newModel(t)
 	m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
@@ -1215,9 +1215,9 @@ func TestDefaultName(t *testing.T) {
 }
 
 func TestModel_ConnectToPostgres(t *testing.T) {
-	host := os.Getenv("RELM_TEST_POSTGRES_HOST")
+	host := os.Getenv("PICKLOCK_TEST_POSTGRES_HOST")
 	if host == "" {
-		t.Skip("RELM_TEST_POSTGRES_HOST not set")
+		t.Skip("PICKLOCK_TEST_POSTGRES_HOST not set")
 	}
 
 	m := newModel(t)
@@ -1229,11 +1229,11 @@ func TestModel_ConnectToPostgres(t *testing.T) {
 	press(t, m, host)
 	pressKey(t, m, "tab") // Port
 	pressKey(t, m, "tab") // User
-	press(t, m, os.Getenv("RELM_TEST_POSTGRES_USER"))
+	press(t, m, os.Getenv("PICKLOCK_TEST_POSTGRES_USER"))
 	pressKey(t, m, "tab") // Password
-	press(t, m, os.Getenv("RELM_TEST_POSTGRES_PASSWORD"))
+	press(t, m, os.Getenv("PICKLOCK_TEST_POSTGRES_PASSWORD"))
 	pressKey(t, m, "tab") // Database
-	press(t, m, os.Getenv("RELM_TEST_POSTGRES_DATABASE"))
+	press(t, m, os.Getenv("PICKLOCK_TEST_POSTGRES_DATABASE"))
 	pressKey(t, m, "enter")
 
 	if m.screen != ScreenWorkspace {

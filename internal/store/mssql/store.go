@@ -9,8 +9,8 @@ import (
 
 	_ "github.com/microsoft/go-mssqldb" // registers the "sqlserver" driver
 
-	"github.com/agmonetti/relm/internal/conn"
-	"github.com/agmonetti/relm/internal/store"
+	"github.com/agmonetti/picklock/internal/conn"
+	"github.com/agmonetti/picklock/internal/store"
 )
 
 // Store is the SQL Server implementation of store.Store.

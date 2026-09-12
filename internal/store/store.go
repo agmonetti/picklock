@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/agmonetti/relm/internal/conn"
+	"github.com/agmonetti/picklock/internal/conn"
 )
 
 // Column describes a column of a relational or wide-column table.

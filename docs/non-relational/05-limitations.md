@@ -2,7 +2,7 @@
 
 ## 1. Scope and Honesty
 
-This document transparently records the design tradeoffs, intentional omissions, and MVP boundaries for the non-relational database expansion in `relm`.
+This document transparently records the design tradeoffs, intentional omissions, and MVP boundaries for the non-relational database expansion in `picklock`.
 
 ---
 
@@ -31,8 +31,8 @@ This document transparently records the design tradeoffs, intentional omissions,
 ## 3. General Cross-Cutting Limitations
 
 1. **Inline Cell Mutation**: Direct spreadsheet-like in-place cell editing is out of scope; mutations are executed via the query editor.
-2. **OS Keychain**: Password persistence remains in `0600` `~/.config/relm/connections.json`. OS keychain integration (libsecret / macOS Keychain) remains in the roadmap.
-3. **Multi-Tab Sessions**: `relm` remains single-connection, single-window. To view two databases concurrently, open a separate terminal or tmux pane.
+2. **OS Keychain**: Password persistence remains in `0600` `~/.config/picklock/connections.json`. OS keychain integration (libsecret / macOS Keychain) remains in the roadmap.
+3. **Multi-Tab Sessions**: `picklock` remains single-connection, single-window. To view two databases concurrently, open a separate terminal or tmux pane.
 
 ---
 

@@ -1,4 +1,4 @@
-# Test databases for relm.
+# Test databases for picklock.
 #
 # Starts the network engines with fixed credentials and a "test" database / keyspace
 # auto-created on first start. Usage:
@@ -16,13 +16,13 @@
 #   SQL Server : localhost:1433  sa/Str0ng!Passw0rd    database master
 #   MongoDB    : localhost:27017 (no auth)             database test
 #   Redis      : localhost:6379  (no auth)             db 0
-#   Cassandra  : localhost:9042  (no auth)             keyspace relm_demo
+#   Cassandra  : localhost:9042  (no auth)             keyspace picklock_demo
 #   Neo4j      : localhost:7687  neo4j/password        database neo4j
 
 services:
   postgres:
     image: postgres:16
-    container_name: relm-pg
+    container_name: picklock-pg
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
@@ -37,7 +37,7 @@ services:
 
   mysql:
     image: mysql:8
-    container_name: relm-mysql
+    container_name: picklock-mysql
     environment:
       MYSQL_ROOT_PASSWORD: root
       MYSQL_DATABASE: test
@@ -51,7 +51,7 @@ services:
 
   mariadb:
     image: mariadb:11
-    container_name: relm-maria
+    container_name: picklock-maria
     environment:
       MARIADB_ROOT_PASSWORD: root
       MARIADB_DATABASE: test
@@ -65,7 +65,7 @@ services:
 
   mssql:
     image: mcr.microsoft.com/mssql/server:2022-latest
-    container_name: relm-mssql
+    container_name: picklock-mssql
     environment:
       ACCEPT_EULA: "Y"
       MSSQL_SA_PASSWORD: "Str0ng!Passw0rd"
@@ -79,7 +79,7 @@ services:
 
   mongo:
     image: mongo:7
-    container_name: relm-mongo
+    container_name: picklock-mongo
     ports:
       - "27017:27017"
     healthcheck:
@@ -90,7 +90,7 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: relm-redis
+    container_name: picklock-redis
     ports:
       - "6379:6379"
     healthcheck:
@@ -101,7 +101,7 @@ services:
 
   cassandra:
     image: cassandra:4.1
-    container_name: relm-cassandra
+    container_name: picklock-cassandra
     environment:
       CASSANDRA_START_RPC: "true"
       MAX_HEAP_SIZE: "512M"
@@ -116,7 +116,7 @@ services:
 
   neo4j:
     image: neo4j:5-community
-    container_name: relm-neo4j
+    container_name: picklock-neo4j
     environment:
       NEO4J_AUTH: "neo4j/password"
       NEO4J_PLUGINS: '["apoc"]'

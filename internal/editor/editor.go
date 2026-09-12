@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/agmonetti/relm/internal/store"
+	"github.com/agmonetti/picklock/internal/store"
 )
 
 // EditorMode is the operational state of the editor.

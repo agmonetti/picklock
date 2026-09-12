@@ -1,4 +1,4 @@
-# Contributing to relm
+# Contributing to picklock
 
 Thanks for taking the time to contribute. This document explains how to set up
 the project, run the checks, and what is expected from a contribution.
@@ -14,8 +14,8 @@ the project, run the checks, and what is expected from a contribution.
 ## Setting up
 
 ```bash
-git clone https://github.com/agmonetti/relm
-cd relm
+git clone https://github.com/agmonetti/picklock
+cd picklock
 ```
 
 There are no dependencies to install manually; `go` fetches them from the module
@@ -28,7 +28,7 @@ go build ./...        # compile everything
 go vet ./...          # lint (also: make lint)
 go test ./...         # run the unit tests (also: make test)
 go run ./cmd/demo     # create demo.db with 20 example tables (no server needed)
-go run ./cmd/relm     # run the TUI
+go run ./cmd/picklock     # run the TUI
 ```
 
 The `Makefile` wraps most of these (`make build`, `make test`, `make lint`,
@@ -43,14 +43,14 @@ drivers:
 ```bash
 docker compose up -d --wait
 
-RELM_TEST_POSTGRES_HOST=localhost RELM_TEST_POSTGRES_USER=postgres \
-RELM_TEST_POSTGRES_PASSWORD=postgres RELM_TEST_POSTGRES_DATABASE=test \
-RELM_TEST_MYSQL_HOST=localhost RELM_TEST_MYSQL_USER=root \
-RELM_TEST_MYSQL_PASSWORD=root RELM_TEST_MYSQL_DATABASE=test \
-RELM_TEST_MARIADB_HOST=localhost RELM_TEST_MARIADB_USER=root \
-RELM_TEST_MARIADB_PASSWORD=root RELM_TEST_MARIADB_DATABASE=test \
-RELM_TEST_MSSQL_HOST=localhost RELM_TEST_MSSQL_USER=sa \
-RELM_TEST_MSSQL_PASSWORD='Str0ng!Passw0rd' RELM_TEST_MSSQL_DATABASE=master \
+PICKLOCK_TEST_POSTGRES_HOST=localhost PICKLOCK_TEST_POSTGRES_USER=postgres \
+PICKLOCK_TEST_POSTGRES_PASSWORD=postgres PICKLOCK_TEST_POSTGRES_DATABASE=test \
+PICKLOCK_TEST_MYSQL_HOST=localhost PICKLOCK_TEST_MYSQL_USER=root \
+PICKLOCK_TEST_MYSQL_PASSWORD=root PICKLOCK_TEST_MYSQL_DATABASE=test \
+PICKLOCK_TEST_MARIADB_HOST=localhost PICKLOCK_TEST_MARIADB_USER=root \
+PICKLOCK_TEST_MARIADB_PASSWORD=root PICKLOCK_TEST_MARIADB_DATABASE=test \
+PICKLOCK_TEST_MSSQL_HOST=localhost PICKLOCK_TEST_MSSQL_USER=sa \
+PICKLOCK_TEST_MSSQL_PASSWORD='Str0ng!Passw0rd' PICKLOCK_TEST_MSSQL_DATABASE=master \
 go test -timeout 300s ./internal/store/...
 
 docker compose down
@@ -76,7 +76,7 @@ The same command set runs in CI on every push and pull request.
   `testing` package, matching the rest of the repo.
 - Table-driven tests are the norm where inputs vary.
 - New engine-level behavior should be covered by an integration test guarded by
-  its `RELM_TEST_<ENGINE>_HOST` env var (they skip when unset).
+  its `PICKLOCK_TEST_<ENGINE>_HOST` env var (they skip when unset).
 
 ## Commit messages
 

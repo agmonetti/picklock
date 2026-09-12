@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/agmonetti/relm/internal/conn"
+	"github.com/agmonetti/picklock/internal/conn"
 )
 
 func TestOpenMemoryAndIntrospect(t *testing.T) {
@@ -168,7 +168,7 @@ func itoa(n int) string {
 func TestReadOnlyBlocksWrites(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "ro.db")
-	// relm does not create files: we create the .db before opening it.
+	// picklock does not create files: we create the .db before opening it.
 	if err := os.WriteFile(path, nil, 0o600); err != nil {
 		t.Fatalf("create file: %v", err)
 	}

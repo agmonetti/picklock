@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/agmonetti/relm/internal/conn"
-	"github.com/agmonetti/relm/internal/store"
+	"github.com/agmonetti/picklock/internal/conn"
+	"github.com/agmonetti/picklock/internal/store"
 )
 
 func TestCassandra_Registered(t *testing.T) {

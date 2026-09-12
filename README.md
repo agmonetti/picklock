@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="assets/icon.png" alt="relm" width="240">
+  <img src="assets/icon.png" alt="picklock" width="240">
 </p>
 
-<h1 align="center">relm</h1>
+<h1 align="center">picklock</h1>
 
 <p align="center">
   A TUI data browser for people who don't leave the terminal.<br>
@@ -13,12 +13,12 @@
 ---
 
 <p align="center">
-  <img src="assets/demo.gif" alt="relm demo" width="85%">
+  <img src="assets/demo.png" alt="picklock demo" width="85%">
 </p>
 
 Browse tables, documents, key-values, and graph structures, run queries and inspect schemas — all from the keyboard, all in one window. No Electron, no browser tab, no mouse required.
 
-> **First time?** `relm` connects to databases that already exist — it doesn't start servers.
+> **First time?** `picklock` connects to databases that already exist — it doesn't start servers.
 > See **[USAGE.md](USAGE.md)** for a step-by-step guide: create a test database, connect and run your first query.
 >
 > **Try it right now:** `go run ./cmd/demo` creates `demo.db` with 20 tables and
@@ -41,21 +41,21 @@ Browse tables, documents, key-values, and graph structures, run queries and insp
 Requires Go 1.26.6+.
 
 ```bash
-go install github.com/agmonetti/relm@latest
+go install github.com/agmonetti/picklock@latest
 ```
 
 Or build from source:
 
 ```bash
-git clone https://github.com/agmonetti/relm
-cd relm
-go build -o relm ./cmd/relm
+git clone https://github.com/agmonetti/picklock
+cd picklock
+go build -o picklock ./cmd/picklock
 ```
 
 ## Usage
 
 ```bash
-relm
+picklock
 ```
 
 The connection screen opens. Pick the engine with `←`/`→`, fill in the fields and press `Enter`. For SQLite you only need the file path.
@@ -64,32 +64,32 @@ To skip the connection screen, pass a DSN directly:
 
 ```bash
 # Relational
-relm ./app.db                                         # SQLite file
-relm postgres://postgres:postgres@localhost:5432/test  # PostgreSQL
-relm mysql://root:root@localhost:3306/test            # MySQL
-relm 'sqlserver://sa:Str0ng!Passw0rd@localhost:1433?database=master'
+picklock ./app.db                                         # SQLite file
+picklock postgres://postgres:postgres@localhost:5432/test  # PostgreSQL
+picklock mysql://root:root@localhost:3306/test            # MySQL
+picklock 'sqlserver://sa:Str0ng!Passw0rd@localhost:1433?database=master'
 
 # Non-Relational
-relm mongodb://localhost:27017/test                   # MongoDB
-relm redis://localhost:6379/0                         # Redis
-relm cassandra://localhost:9042/relm_demo             # Cassandra
-relm neo4j://neo4j:password@localhost:7687/neo4j     # Neo4j
+picklock mongodb://localhost:27017/test                   # MongoDB
+picklock redis://localhost:6379/0                         # Redis
+picklock cassandra://localhost:9042/picklock_demo             # Cassandra
+picklock neo4j://neo4j:password@localhost:7687/neo4j     # Neo4j
 
 # Read-only enforcement
-relm --read-only postgres://user:pass@host:5432/mydb
-relm --read-only redis://localhost:6379/0
+picklock --read-only postgres://user:pass@host:5432/mydb
+picklock --read-only redis://localhost:6379/0
 ```
 
 ## What you get
 
 - **Single-window adaptive layout** — sidebar (catalog), main data viewer (tables, documents, key-values, graph nodes) and editor always visible, always in sync.
 - **Multi-paradigm pagination** — relational keyset pagination, MongoDB skip/limit pages, Redis SCAN/paging, Cassandra page states, and Cypher skip/limits.
-- **Native Query Editor** — executes SQL, MQL, RESP, CQL, and Cypher with statement segmentation (delimited by `;` for SQL/CQL/Cypher and newlines for Redis) targeting the statement under the cursor, with history of your last 100 queries (`~/.config/relm/history.json`).
+- **Native Query Editor** — executes SQL, MQL, RESP, CQL, and Cypher with statement segmentation (delimited by `;` for SQL/CQL/Cypher and newlines for Redis) targeting the statement under the cursor, with history of your last 100 queries (`~/.config/picklock/history.json`).
 - **Auto-refresh** — after any write query the catalog and active item reload automatically in the background.
 - **Structure Inspector (`i`)** — view columns and indexes (relational), collection stats and inferred schema (MongoDB), key memory and server stats (Redis), Partition Keys & Clustering Columns (Cassandra), or node label schemas & relationship types (Neo4j).
 - **Detail View (`v`)** — full values for table rows, pretty-printed JSON for documents, full key-value entries, and graph node properties + incident edges.
 - **Universal Export (`Alt+E`)** — export tabular queries, documents, and key structures directly to CSV or formatted JSON.
-- **Saved connections** — stored securely in `~/.config/relm/connections.json`.
+- **Saved connections** — stored securely in `~/.config/picklock/connections.json`.
 - **Read-only enforcement** across all 9 engines.
 
 ## Shortcuts
@@ -126,7 +126,7 @@ relm --read-only redis://localhost:6379/0
 
 ## MCP Server (Model Context Protocol)
 
-`relm` includes a dedicated Model Context Protocol (MCP) server that exposes browsing and querying capabilities for all 9 database engines to AI agents (such as Antigravity / agy, Claude Desktop, Cursor, etc.).
+`picklock` includes a dedicated Model Context Protocol (MCP) server that exposes browsing and querying capabilities for all 9 database engines to AI agents (such as Antigravity / agy, Claude Desktop, Cursor, etc.).
 
 ### Tools Provided
 
@@ -137,7 +137,7 @@ relm --read-only redis://localhost:6379/0
 | `inspect` | Inspect schemas, columns, types, indexes, and engine metadata |
 | `query` | Execute native queries (SQL, MQL, RESP, CQL, Cypher). Mutations blocked in read-only mode |
 | `connect` | Switch or open database connections dynamically via DSN or saved connection name |
-| `list_connections` | Read saved connection profiles from `~/.config/relm/connections.json` |
+| `list_connections` | Read saved connection profiles from `~/.config/picklock/connections.json` |
 
 ### Setup & Configuration
 
@@ -148,9 +148,9 @@ Run on the fly using `go run`:
 ```json
 {
   "mcpServers": {
-    "relm": {
+    "picklock": {
       "command": "go",
-      "args": ["run", "github.com/agmonetti/relm/cmd/relm-mcp@latest", "--read-only", "postgres://user:pass@localhost:5432/mydb"]
+      "args": ["run", "github.com/agmonetti/picklock/cmd/picklock-mcp@latest", "--read-only", "postgres://user:pass@localhost:5432/mydb"]
     }
   }
 }
@@ -161,7 +161,7 @@ Run on the fly using `go run`:
 Install the binary into `$GOPATH/bin`:
 
 ```bash
-go install github.com/agmonetti/relm/cmd/relm-mcp@latest
+go install github.com/agmonetti/picklock/cmd/picklock-mcp@latest
 ```
 
 Configuration:
@@ -169,8 +169,8 @@ Configuration:
 ```json
 {
   "mcpServers": {
-    "relm": {
-      "command": "relm-mcp",
+    "picklock": {
+      "command": "picklock-mcp",
       "args": ["--read-only", "/path/to/database.db"]
     }
   }
@@ -182,9 +182,9 @@ Configuration:
 Clone the repository and build the binary locally:
 
 ```bash
-git clone https://github.com/agmonetti/relm.git
-cd relm
-go build -o relm-mcp ./cmd/relm-mcp
+git clone https://github.com/agmonetti/picklock.git
+cd picklock
+go build -o picklock-mcp ./cmd/picklock-mcp
 ```
 
 Configuration:
@@ -192,8 +192,8 @@ Configuration:
 ```json
 {
   "mcpServers": {
-    "relm": {
-      "command": "/absolute/path/to/relm/relm-mcp",
+    "picklock": {
+      "command": "/absolute/path/to/picklock/picklock-mcp",
       "args": ["--read-only", "/absolute/path/to/demo.db"]
     }
   }
@@ -205,7 +205,7 @@ Configuration:
 ## Development
 
 ```bash
-go run ./cmd/relm   # run
+go run ./cmd/picklock   # run
 go test ./...       # tests
 go vet ./...        # lint
 ```

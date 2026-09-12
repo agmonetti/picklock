@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/agmonetti/relm/internal/store"
-	"github.com/agmonetti/relm/internal/tui/screens"
+	"github.com/agmonetti/picklock/internal/store"
+	"github.com/agmonetti/picklock/internal/tui/screens"
 )
 
 func TestExport_NothingToExportFromEditor(t *testing.T) {

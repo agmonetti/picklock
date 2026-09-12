@@ -9,8 +9,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/agmonetti/relm/internal/prefs"
-	"github.com/agmonetti/relm/internal/tui/styles"
+	"github.com/agmonetti/picklock/internal/prefs"
+	"github.com/agmonetti/picklock/internal/tui/styles"
 )
 
 // SettingsMsg is emitted when the user saves the preferences.

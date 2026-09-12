@@ -6,9 +6,9 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/agmonetti/relm/internal/store"
-	"github.com/agmonetti/relm/internal/tui/screens"
-	"github.com/agmonetti/relm/internal/tui/styles"
+	"github.com/agmonetti/picklock/internal/store"
+	"github.com/agmonetti/picklock/internal/tui/screens"
+	"github.com/agmonetti/picklock/internal/tui/styles"
 )
 
 // View implements tea.Model.
@@ -90,7 +90,7 @@ func (m *Model) renderHeader() string {
 	}
 
 	parts := []string{
-		styles.StyleHeader.Render("relm"),
+		styles.StyleHeader.Render("picklock"),
 		" " + styles.StylePillDefault.Render("[") + labelStyle.Render(label) + styles.StylePillDefault.Render("]"),
 	}
 	if table != "" {

@@ -76,7 +76,7 @@ func (s *SQLiteStore) Tables() ([]string, error) {
   otherwise (a note in the success message states the page when the table has
   more rows).
 - A centered prompt (bubbles `textinput`) takes the target file name, pre-filled
-  with `relm-export-<timestamp>.csv`. The format follows the extension
+  with `picklock-export-<timestamp>.csv`. The format follows the extension
   (`.json` → JSON; anything else → CSV). `Enter` writes the file synchronously
   (≤10k rows) and shows `exported N rows → /abs/path`; `Esc` cancels. A write
   error keeps the prompt open so the user can fix the name.
@@ -84,7 +84,7 @@ func (s *SQLiteStore) Tables() ([]string, error) {
   never touches the database or a driver. CSV is RFC 4180 (`encoding/csv`): NULL
   and empty string both become empty fields. JSON is an array of objects in
   column order; NULL becomes `null` (via `Result.Nulls`), everything else stays
-  a string (relm's model is strings-only). HTML escaping is disabled so values
+  a string (picklock's model is strings-only). HTML escaping is disabled so values
   like `a < b` are exported verbatim.
 - Full-table export (beyond the current page) needs a streaming `Store` method
   and is out of scope until then.
@@ -215,7 +215,7 @@ server with an untrusted certificate fails with the driver's literal error
 | Empty query + `Ctrl+R` | Don't execute anything. Message: `write a query first`. |
 | Query ending with semicolon | Works normally. |
 | Multiple statements separated by `;` | Execute the statement under the cursor (by line). If several statements are on the same line, the first one is chosen. The split respects strings (`'...'`, `''`, `\`). |
-| `DROP TABLE users` | Execute normally. `relm` doesn't ask for confirmation (the user knows what they're doing). |
+| `DROP TABLE users` | Execute normally. `picklock` doesn't ask for confirmation (the user knows what they're doing). |
 | Query taking >5 seconds | No execution timeout by default. Show a spinner. The query runs with `context.WithTimeout` using the user's configured timeout (`Ctrl+P`, default 60s); `Esc` cancels it (both abort the driver call via `QueryContext`/`ExecContext`). |
 | Unsupported dialect | The engine's literal SQL error is shown in red. The user writes SQL for the engine they're connected to. |
 
@@ -245,7 +245,7 @@ flag (merged as `cfg.ReadOnly = cfg.ReadOnly || globalReadOnly` before opening).
 
 ## Saved connections
 
-- File: `~/.config/relm/connections.json`, permissions `0600`.
+- File: `~/.config/picklock/connections.json`, permissions `0600`.
 - Structure:
   ```json
   [
@@ -262,7 +262,7 @@ flag (merged as `cfg.ReadOnly = cfg.ReadOnly || globalReadOnly` before opening).
 
 ## Preferences
 
-- File: `~/.config/relm/prefs.json`, permissions `0600`.
+- File: `~/.config/picklock/prefs.json`, permissions `0600`.
 - Structure:
   ```json
   { "query_timeout_seconds": 60, "sidebar_width": 0, "editor_height": 0 }
@@ -275,7 +275,7 @@ flag (merged as `cfg.ReadOnly = cfg.ReadOnly || globalReadOnly` before opening).
 - Edited from the settings screen (`Ctrl+P`, available from the connect and
   workspace screens) and saved with `Enter`. The change applies to the next
   query.
-- Same directory resolution as `connections.json` (`RELM_CONFIG_DIR` override).
+- Same directory resolution as `connections.json` (`PICKLOCK_CONFIG_DIR` override).
 
 ## User-facing messages
 
@@ -308,13 +308,13 @@ ERROR: PERMISSION DENIED
 - **SQLite:** use `":memory:"` as path for store, browser and editor tests — creates no files and is the reference engine for all UI tests.
 - **Other engines:** integration tests inside `internal/store/<engine>/`, triggered by separate env vars. If the var isn't set, `t.Skip`:
   ```go
-  // RELM_TEST_POSTGRES_HOST=localhost
-  // RELM_TEST_POSTGRES_USER=postgres
-  // RELM_TEST_POSTGRES_PASSWORD=postgres
-  // RELM_TEST_POSTGRES_DATABASE=test
+  // PICKLOCK_TEST_POSTGRES_HOST=localhost
+  // PICKLOCK_TEST_POSTGRES_USER=postgres
+  // PICKLOCK_TEST_POSTGRES_PASSWORD=postgres
+  // PICKLOCK_TEST_POSTGRES_DATABASE=test
   // (same pattern with MYSQL, MARIADB, MSSQL)
   ```
-  - The setup creates a test table `relm_test`, runs the same assertions as the SQLite test.
+  - The setup creates a test table `picklock_test`, runs the same assertions as the SQLite test.
   - Docker for local development: the repo's `compose.yaml` starts the 4 engines with fixed credentials and the auto-created `test` database (`docker compose up -d`). Full commands in `README.md`.
 - Don't mock `Store` for browser/editor tests — use the real implementation with in-memory SQLite. It's more reliable.
 - Test names: `TestBrowser_SelectTable_LoadsColumns`, `TestStore_Query_ReturnsError_OnInvalidSQL`.
@@ -339,7 +339,7 @@ ERROR: PERMISSION DENIED
 ## Expected initial go.mod
 
 ```
-module github.com/agmonetti/relm
+module github.com/agmonetti/picklock
 
 go 1.22
 
@@ -371,7 +371,7 @@ If any of these features seems necessary to get something basic working, check b
 ## Persistent query history
 
 - The in-memory ring buffer (100 entries) is mirrored to
-  `~/.config/relm/history.json` (0600, `RELM_CONFIG_DIR` override like the
+  `~/.config/picklock/history.json` (0600, `PICKLOCK_CONFIG_DIR` override like the
   other files). `editor.SaveHistory` writes the whole list after each query;
   the ring already caps and dedupes, so the file is always the truth of the
   in-memory history. `editor.LoadHistory` seeds the editor on startup and on
@@ -384,14 +384,14 @@ If any of these features seems necessary to get something basic working, check b
   and that risk is documented in `06-security.md`; the user controls what they
   run and store.
 
-## DSN shortcut (`relm <dsn>`)
+## DSN shortcut (`picklock <dsn>`)
 
 - `conn.ParseDSN` converts one command-line argument into a `ConnectionConfig`:
   a bare path (no scheme) is a SQLite file; `sqlite:`/`file:` URIs work too for
   absolute paths; `postgres://`, `mysql://`, `mariadb://` and `sqlserver://`
   parse user/password/host/port/database with the engine default port and
   `localhost` as fallbacks. Anything else is an error reported before the TUI
-  starts (`relm: ...` on stderr, exit 1).
+  starts (`picklock: ...` on stderr, exit 1).
 - The database comes from the URL path (`postgres://h/dbname`), except SQL Server
   where the standard `?database=` query parameter is used (its URL format has no
   path database).

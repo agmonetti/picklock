@@ -7,9 +7,9 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/mattn/go-runewidth"
 
-	"github.com/agmonetti/relm/internal/browser"
-	"github.com/agmonetti/relm/internal/editor"
-	"github.com/agmonetti/relm/internal/store"
+	"github.com/agmonetti/picklock/internal/browser"
+	"github.com/agmonetti/picklock/internal/editor"
+	"github.com/agmonetti/picklock/internal/store"
 )
 
 func TestRenderWorkspace_ShowsPaneTitles(t *testing.T) {

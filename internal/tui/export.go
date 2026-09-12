@@ -11,10 +11,10 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/agmonetti/relm/internal/export"
-	"github.com/agmonetti/relm/internal/store"
-	"github.com/agmonetti/relm/internal/tui/screens"
-	"github.com/agmonetti/relm/internal/tui/styles"
+	"github.com/agmonetti/picklock/internal/export"
+	"github.com/agmonetti/picklock/internal/store"
+	"github.com/agmonetti/picklock/internal/tui/screens"
+	"github.com/agmonetti/picklock/internal/tui/styles"
 )
 
 // openExport opens the export prompt for the data under the cursor: the last
@@ -29,7 +29,7 @@ func (m *Model) openExport() tea.Cmd {
 	m.exportErr = ""
 	m.exportRes = res
 	m.exportNote = note
-	m.exportInput.SetValue(fmt.Sprintf("relm-export-%s.csv", time.Now().Format("20060102-150405")))
+	m.exportInput.SetValue(fmt.Sprintf("picklock-export-%s.csv", time.Now().Format("20060102-150405")))
 	m.exportInput.Focus()
 	m.exporting = true
 	return nil

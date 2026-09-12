@@ -2,7 +2,7 @@
 
 ## 1. Overview and Core Philosophy
 
-`relm`'s architecture evolves from a table-centric model to a **multi-paradigm data browser** architecture founded on three strict principles:
+`picklock`'s architecture evolves from a table-centric model to a **multi-paradigm data browser** architecture founded on three strict principles:
 
 1. **No Semantic Falsehoods**: Never call MongoDB collections, Redis keys, or Neo4j labels "tables". Never invent fake columns for key-value stores.
 2. **No Result God Objects**: The result of an operation is not a sprawling struct with optional fields for every database. It is a self-describing, typed `DataView`.
@@ -248,7 +248,7 @@ type QueryExecutor interface {
 
 ## 4. The Relational Migration Adapter
 
-To avoid rewriting existing relational implementations (`SQLiteStore`, `PGStore`, `MySQLStore`, `MSSQLStore`), `relm` preserves the internal `Store` interface and wraps it in a shared `RelationalAdapter`:
+To avoid rewriting existing relational implementations (`SQLiteStore`, `PGStore`, `MySQLStore`, `MSSQLStore`), `picklock` preserves the internal `Store` interface and wraps it in a shared `RelationalAdapter`:
 
 ```mermaid
 graph LR

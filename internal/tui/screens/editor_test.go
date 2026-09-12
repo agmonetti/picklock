@@ -3,7 +3,7 @@ package screens_test
 import (
 	"testing"
 
-	"github.com/agmonetti/relm/internal/tui/screens"
+	"github.com/agmonetti/picklock/internal/tui/screens"
 )
 
 func TestExtractTextRange(t *testing.T) {

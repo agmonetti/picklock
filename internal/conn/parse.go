@@ -9,14 +9,14 @@ import (
 
 // ParseDSN converts a command-line argument or URI into a ConnectionConfig:
 //
-//	relm ./app.db                             SQLite (a bare path, absolute or relative)
-//	relm sqlite:/abs/app.db                   SQLite via URI
-//	relm postgres://u:p@host:5432/db          PostgreSQL (also mysql://, mariadb://)
-//	relm sqlserver://u:p@host:1433?database=db
-//	relm mongodb://u:p@host:27017/db          MongoDB (also mongodb+srv://)
-//	relm redis://:pass@host:6379/0            Redis (also rediss://)
-//	relm cassandra://host:9042/keyspace       Cassandra (also cql://)
-//	relm neo4j://u:p@host:7687/neo4j          Neo4j (also bolt://, neo4j+s://)
+//	picklock ./app.db                             SQLite (a bare path, absolute or relative)
+//	picklock sqlite:/abs/app.db                   SQLite via URI
+//	picklock postgres://u:p@host:5432/db          PostgreSQL (also mysql://, mariadb://)
+//	picklock sqlserver://u:p@host:1433?database=db
+//	picklock mongodb://u:p@host:27017/db          MongoDB (also mongodb+srv://)
+//	picklock redis://:pass@host:6379/0            Redis (also rediss://)
+//	picklock cassandra://host:9042/keyspace       Cassandra (also cql://)
+//	picklock neo4j://u:p@host:7687/neo4j          Neo4j (also bolt://, neo4j+s://)
 //
 // Any engine accepts ?sslmode= or ?tls= in the URL query, which maps to
 // ConnectionConfig.SSLMode. Missing host/port fall back to localhost and the
@@ -41,7 +41,7 @@ func ParseDSN(dsn string) (ConnectionConfig, error) {
 		cfg.Driver = DriverSQLite
 		cfg.Path = u.Path
 		if cfg.Path == "" {
-			cfg.Path = u.Opaque // e.g. "sqlite:relm.db", "file:relm.db"
+			cfg.Path = u.Opaque // e.g. "sqlite:picklock.db", "file:relm.db"
 		}
 		if u.Host != "" {
 			return ConnectionConfig{}, fmt.Errorf("invalid DSN %q: sqlite path must not have a host", redactURI(dsn))

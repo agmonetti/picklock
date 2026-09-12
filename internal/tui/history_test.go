@@ -4,12 +4,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/agmonetti/relm/internal/editor"
-	"github.com/agmonetti/relm/internal/tui/screens"
+	"github.com/agmonetti/picklock/internal/editor"
+	"github.com/agmonetti/picklock/internal/tui/screens"
 )
 
 func TestModel_QueryHistoryPersistsAcrossSessions(t *testing.T) {
-	t.Setenv("RELM_CONFIG_DIR", t.TempDir()) // isolated from the other tests' queries
+	t.Setenv("PICKLOCK_CONFIG_DIR", t.TempDir()) // isolated from the other tests' queries
 	m := connect(t)
 	pressAlt(t, m, "3")
 	if m.focus != screens.FocusEditor {
@@ -33,7 +33,7 @@ func TestModel_QueryHistoryPersistsAcrossSessions(t *testing.T) {
 }
 
 func TestModel_QueryHistoryNavigableAfterReload(t *testing.T) {
-	t.Setenv("RELM_CONFIG_DIR", t.TempDir())
+	t.Setenv("PICKLOCK_CONFIG_DIR", t.TempDir())
 	m := connect(t)
 	pressAlt(t, m, "3")
 	press(t, m, "SELECT 7")

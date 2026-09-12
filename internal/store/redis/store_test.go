@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agmonetti/relm/internal/conn"
-	"github.com/agmonetti/relm/internal/store"
+	"github.com/agmonetti/picklock/internal/conn"
+	"github.com/agmonetti/picklock/internal/store"
 )
 
 func TestRedis_Registered(t *testing.T) {

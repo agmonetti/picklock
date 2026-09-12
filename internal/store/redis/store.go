@@ -11,8 +11,8 @@ import (
 
 	goredis "github.com/redis/go-redis/v9"
 
-	"github.com/agmonetti/relm/internal/conn"
-	"github.com/agmonetti/relm/internal/store"
+	"github.com/agmonetti/picklock/internal/conn"
+	"github.com/agmonetti/picklock/internal/store"
 )
 
 func init() {

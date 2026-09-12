@@ -3,7 +3,7 @@ package store
 import (
 	"context"
 
-	"github.com/agmonetti/relm/internal/conn"
+	"github.com/agmonetti/picklock/internal/conn"
 )
 
 // RelationalAdapter adapts an internal relational Store to the universal DataSource interface.

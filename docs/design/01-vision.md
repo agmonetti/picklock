@@ -2,7 +2,7 @@
 
 ## Project name
 
-`relm` — terminal database browser.
+`picklock` — terminal database browser.
 
 ## Defining phrase
 
@@ -10,7 +10,7 @@
 
 ## What it is
 
-`relm` is a terminal tool (TUI) written in Go to explore, query and edit databases. It runs entirely in the terminal: no GUI, no server, no prior configuration.
+`picklock` is a terminal tool (TUI) written in Go to explore, query and edit databases. It runs entirely in the terminal: no GUI, no server, no prior configuration.
 
 It supports exactly five engines — SQLite, PostgreSQL, MySQL, MariaDB and SQL Server. The user picks the engine on a connection screen, fills in the form (or uses a saved connection), and can navigate tables, run arbitrary SQL and view results — all from the keyboard.
 
@@ -26,7 +26,7 @@ It supports exactly five engines — SQLite, PostgreSQL, MySQL, MariaDB and SQL 
 
 Inspired by [DBee](https://github.com/murat-cileli/dbee) but with its own identity:
 
-| DBee | relm |
+| DBee | picklock |
 |---|---|
 | Multiple engines | Exactly five engines: SQLite, PostgreSQL, MySQL, MariaDB, SQL Server |
 | Tabs per engine on connection | A form that changes according to the selected engine |

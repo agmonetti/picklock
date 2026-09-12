@@ -1,5 +1,5 @@
-// Package mcp implements a Model Context Protocol server that exposes
-// relm's multi-engine DataSource interface as MCP tools.
+// Package mcp implements a Model Context Protocol server exposing
+// picklock's multi-engine DataSource interface as MCP tools.
 package mcp
 
 import (
@@ -12,12 +12,12 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 
-	"github.com/agmonetti/relm/internal/conn"
-	"github.com/agmonetti/relm/internal/store"
+	"github.com/agmonetti/picklock/internal/conn"
+	"github.com/agmonetti/picklock/internal/store"
 )
 
 const (
-	serverName    = "relm"
+	serverName    = "picklock"
 	serverVersion = "0.1.0"
 	maxBrowseRows = 100
 	maxQueryRows  = 500
@@ -42,7 +42,7 @@ func New(readOnly bool) *Server {
 		server.WithToolCapabilities(false),
 		server.WithRecovery(),
 		server.WithInstructions(
-			"relm MCP server — a unified database browser for 9 engines "+
+			"picklock MCP server — a unified database browser for 9 engines "+
 				"(SQLite, PostgreSQL, MySQL, MariaDB, SQL Server, MongoDB, Redis, Cassandra, Neo4j). "+
 				"Use 'connect' to open a database, then list_objects / browse / inspect / query to interact with it.",
 		),
@@ -119,7 +119,7 @@ func (s *Server) registerTools() {
 // --- tool definitions ---
 
 var toolListConnections = mcp.NewTool("list_connections",
-	mcp.WithDescription("List saved database connections from ~/.config/relm/connections.json"),
+	mcp.WithDescription("List saved database connections from ~/.config/picklock/connections.json"),
 )
 
 var toolConnect = mcp.NewTool("connect",
