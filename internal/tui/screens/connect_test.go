@@ -382,6 +382,7 @@ func TestConnScreen_PortResetsToNewEngineDefault(t *testing.T) {
 }
 
 func TestConnScreen_ContentHorizontallyCentered(t *testing.T) {
+	firstLogoLine := strings.TrimSpace(strings.Split(logoASCII, "\n")[0])
 	for _, w := range []int{80, 120, 160} {
 		w := w
 		c := NewConnScreen(nil)
@@ -393,7 +394,7 @@ func TestConnScreen_ContentHorizontallyCentered(t *testing.T) {
 			plain := ansi.Strip(l)
 			trimmed := strings.TrimSpace(plain)
 			switch {
-			case strings.HasPrefix(trimmed, "_____"): // logo line 1
+			case strings.HasPrefix(trimmed, firstLogoLine): // logo line 1
 				d, ok := centerDelta(l, w)
 				if !ok {
 					continue
