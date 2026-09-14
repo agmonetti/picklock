@@ -148,6 +148,9 @@ func sidebarHasGroups(items []store.CatalogItem) bool {
 		if item.Group == "" {
 			continue
 		}
+		if item.Group == "RELATIONS" {
+			return true
+		}
 		if first == "" {
 			first = item.Group
 			continue
