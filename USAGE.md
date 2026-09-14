@@ -91,7 +91,15 @@ Connect in `picklock`:
 - **MariaDB**: engine `mariadb`, host `localhost`, port `3307`, user `root`, pass `root`, db `test`
 - **SQL Server**: engine `mssql`, host `localhost`, port `1433`, user `sa`, pass `Str0ng!Passw0rd`, db `master`
 
----
+### Relational relationships
+
+The sidebar keeps every physical table browseable. Tables whose columns are
+entirely composed of two or more foreign keys are additionally grouped under
+`RELATIONS` (for example `discount_products` and `discount_categories`).
+Open any table and press `i` to see its outgoing foreign keys and tables that
+reference it. Classification uses declared database constraints, not naming
+conventions, and works across SQLite, PostgreSQL, MySQL, MariaDB, and SQL Server.
+
 
 ## 3. MongoDB (Document Database)
 

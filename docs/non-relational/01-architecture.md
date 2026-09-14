@@ -200,8 +200,11 @@ type InspectionView interface {
 }
 
 type RelationalStructure struct {
-    Columns []Column // With PK bool and Clustering bool
-    Indexes []Index
+    Columns      []Column // With PK bool and Clustering bool
+    Indexes      []Index
+    ForeignKeys  []ForeignKey // Outgoing constraints
+    ReferencedBy []ForeignKey // Incoming constraints
+    RelationTable bool // Pure many-to-many / association table
 }
 
 type DocumentStructure struct {
@@ -256,9 +259,9 @@ graph LR
     Adapter --> Core[DataSource]
 ```
 
-- **`Catalog()`**: Queries `legacy.Tables()` → returns `CatalogDescriptor{Title: "TABLES", ItemNoun: "table"}`.
+- **`Catalog()`**: Queries `legacy.Tables()` and `legacy.ForeignKeysContext()` → returns all physical tables, grouping pure association tables under `RELATIONS`.
 - **`Browse()`**: Translates `BrowseRequest` to `legacy.SelectTableKeysetPageContext` or `SelectTablePageContext` → returns `*TabularData`.
-- **`Inspect()`**: Queries `legacy.Columns()` and `legacy.Indexes()` → returns `*RelationalStructure`.
+- **`Inspect()`**: Queries `legacy.Columns()`, `legacy.Indexes()`, and foreign-key metadata → returns `*RelationalStructure` with outgoing and incoming relationships.
 - **`Query()`**: Splits SQL statements, calls `legacy.QueryContextMax` / `ExecContext` → returns `*TabularData`.
 
 All dialect identifier quoting, keyset ordering, and schema SQL queries are preserved 100% untouched.

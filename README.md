@@ -85,8 +85,7 @@ picklock --read-only redis://localhost:6379/0
 - **Single-window adaptive layout** — sidebar (catalog), main data viewer (tables, documents, key-values, graph nodes) and editor always visible, always in sync.
 - **Multi-paradigm pagination** — relational keyset pagination, MongoDB skip/limit pages, Redis SCAN/paging, Cassandra page states, and Cypher skip/limits.
 - **Native Query Editor** — executes SQL, MQL, RESP, CQL, and Cypher with statement segmentation (delimited by `;` for SQL/CQL/Cypher and newlines for Redis) targeting the statement under the cursor, with history of your last 100 queries (`~/.config/picklock/history.json`).
-- **Auto-refresh** — after any write query the catalog and active item reload automatically in the background.
-- **Structure Inspector (`i`)** — view columns and indexes (relational), collection stats and inferred schema (MongoDB), key memory and server stats (Redis), Partition Keys & Clustering Columns (Cassandra), or node label schemas & relationship types (Neo4j).
+- **Structure Inspector (`i`)** — view columns, indexes, foreign keys, and incoming references for relational objects. Pure association tables are grouped under `RELATIONS` without hiding their physical rows.
 - **Detail View (`v`)** — full values for table rows, pretty-printed JSON for documents, full key-value entries, and graph node properties + incident edges.
 - **Universal Export (`Alt+E`)** — export tabular queries, documents, and key structures directly to CSV or formatted JSON.
 - **Saved connections** — stored securely in `~/.config/picklock/connections.json`.

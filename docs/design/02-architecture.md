@@ -134,11 +134,10 @@ type Store interface {
     Version() (string, error)
     Close() error
 
-    // Schema introspection
     Tables() ([]string, error)
     Columns(table string) ([]Column, error)
     Indexes(table string) ([]Index, error)
-
+    ForeignKeysContext(ctx context.Context) ([]ForeignKey, error)
     // Arbitrary execution
     Query(sql string) (*Result, error)
     Exec(sql string) (int64, error)          // rowsAffected
@@ -158,6 +157,18 @@ type Column struct {
     NotNull bool
     Default string
     PK      bool
+}
+
+type ForeignKey struct {
+    Name              string
+    TableSchema       string
+    Table             string
+    Columns           []string
+    ReferencedSchema  string
+    ReferencedTable   string
+    ReferencedColumns []string
+    UpdateRule        string
+    DeleteRule        string
 }
 
 type Result struct {

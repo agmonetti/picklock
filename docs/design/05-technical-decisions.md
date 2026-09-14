@@ -46,15 +46,32 @@ func (s *SQLiteStore) Tables() ([]string, error) {
 - Every exported function has a godoc comment.
 - Complex SQL queries have a comment explaining what they return.
 
-## Per-engine dialects
+### Per-engine dialects
 
-| Engine | QuoteIdent | Pagination | Schema source |
-|---|---|---|---|
-| SQLite | `"name"` | keyset `ORDER BY "pk"` / `LIMIT n` (OFFSET fallback) | `sqlite_master` + `PRAGMA` |
-| PostgreSQL | `"name"` | keyset `ORDER BY "pk"` / `LIMIT n` (OFFSET fallback) | `information_schema` + `pg_indexes` |
-| MySQL | `` `name` `` | keyset `ORDER BY "pk"` / `LIMIT n` (OFFSET fallback) | `information_schema` |
-| MariaDB | `` `name` `` | keyset `ORDER BY "pk"` / `LIMIT n` (OFFSET fallback) | `information_schema` |
-| SQL Server | `[name]` | keyset `ORDER BY "pk"` / `OFFSET..FETCH` (OFFSET fallback) | `INFORMATION_SCHEMA` + `sys.indexes` |
+| Engine | QuoteIdent | Pagination |
+|---|---|---|
+| SQLite | `"name"` | keyset `ORDER BY "pk"` / `LIMIT n` (OFFSET fallback) |
+| PostgreSQL | `"name"` | keyset `ORDER BY "pk"` / `LIMIT n` (OFFSET fallback) |
+| MySQL / MariaDB | `` `name` `` | keyset `ORDER BY "pk"` / `LIMIT n` (OFFSET fallback) |
+| SQL Server | `[name]` | keyset `ORDER BY [pk]` / `OFFSET..FETCH` (OFFSET fallback) |
+
+### Per-engine schema metadata
+
+| Engine | Tables / columns / indexes | Foreign-key metadata |
+|---|---|---|
+| SQLite | `sqlite_master` + `PRAGMA` | `PRAGMA foreign_key_list` |
+| PostgreSQL | `information_schema` + `pg_indexes` | `information_schema.key_column_usage` + `referential_constraints` |
+| MySQL / MariaDB | `information_schema` | `KEY_COLUMN_USAGE` + `REFERENTIAL_CONSTRAINTS` |
+| SQL Server | `INFORMATION_SCHEMA` + `sys.indexes` | `sys.foreign_keys` + `sys.foreign_key_columns` |
+
+Foreign keys are exposed in relational inspection with their ordered source and
+referenced columns, update rule, and delete rule. The catalog keeps every
+physical table browseable, but groups a table under `RELATIONS` only when it
+has at least two foreign keys and every column participates in one of them.
+Names alone never imply a relationship; schemas without declared constraints
+are classified conservatively as ordinary tables.
+
+### Per-engine pagination
 
 - Tables with a single-column primary key are browsed with **keyset pagination**
   (`WHERE "pk" > <last key> ORDER BY "pk" LIMIT n`), so refreshing never moves
