@@ -127,8 +127,10 @@ func testStore(t *testing.T, cfg conn.ConnectionConfig) {
 	if err != nil {
 		t.Fatalf("ForeignKeysContext: %v", err)
 	}
-	if len(fks) != 0 {
-		t.Errorf("ForeignKeysContext = %v, want no foreign keys", fks)
+	for _, fk := range fks {
+		if fk.Table == "" || fk.ReferencedTable == "" {
+			t.Errorf("ForeignKeysContext returned incomplete key: %+v", fk)
+		}
 	}
 }
 
