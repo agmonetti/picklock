@@ -35,8 +35,20 @@ func TestIntegration(t *testing.T) {
 	}
 	defer s.Close()
 
+	if _, err := s.Exec("DROP TABLE IF EXISTS picklock_child"); err != nil {
+		t.Fatalf("drop child: %v", err)
+	}
+	if _, err := s.Exec("DROP TABLE IF EXISTS picklock_parent"); err != nil {
+		t.Fatalf("drop parent: %v", err)
+	}
 	if _, err := s.Exec("DROP TABLE IF EXISTS picklock_test"); err != nil {
 		t.Fatalf("drop: %v", err)
+	}
+	if _, err := s.Exec("CREATE TABLE picklock_parent (id SERIAL PRIMARY KEY)"); err != nil {
+		t.Fatalf("create parent: %v", err)
+	}
+	if _, err := s.Exec("CREATE TABLE picklock_child (parent_id INTEGER NOT NULL REFERENCES picklock_parent(id), value TEXT)"); err != nil {
+		t.Fatalf("create child: %v", err)
 	}
 	if _, err := s.Exec("CREATE TABLE picklock_test (id SERIAL PRIMARY KEY, name TEXT NOT NULL, email TEXT)"); err != nil {
 		t.Fatalf("create: %v", err)
@@ -45,6 +57,8 @@ func TestIntegration(t *testing.T) {
 		t.Fatalf("insert: %v", err)
 	}
 	t.Cleanup(func() {
+		s.Exec("DROP TABLE IF EXISTS picklock_child")
+		s.Exec("DROP TABLE IF EXISTS picklock_parent")
 		s.Exec("DROP TABLE IF EXISTS picklock_test")
 	})
 
@@ -99,7 +113,6 @@ func TestIntegration(t *testing.T) {
 	if len(second.Rows) != 0 {
 		t.Errorf("second keyset page = %v, want empty", second.Rows)
 	}
-
 	if v, err := s.Version(); err != nil || v == "" {
 		t.Errorf("Version = %q, err=%v", v, err)
 	}
@@ -108,10 +121,20 @@ func TestIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ForeignKeysContext: %v", err)
 	}
+	foundFK := false
 	for _, fk := range fks {
+		if fk.Table == "picklock_child" {
+			foundFK = true
+			if fk.ReferencedTable != "picklock_parent" || len(fk.Columns) != 1 || fk.Columns[0] != "parent_id" || len(fk.ReferencedColumns) != 1 || fk.ReferencedColumns[0] != "id" {
+				t.Errorf("picklock_child FK = %+v", fk)
+			}
+		}
 		if fk.Table == "" || fk.ReferencedTable == "" {
 			t.Errorf("ForeignKeysContext returned incomplete key: %+v", fk)
 		}
+	}
+	if !foundFK {
+		t.Errorf("ForeignKeysContext did not return picklock_child FK: %v", fks)
 	}
 }
 

@@ -180,19 +180,37 @@ func (s *Store) Indexes(table string) ([]store.Index, error) {
 // ForeignKeysContext returns all foreign-key constraints in the current schema.
 func (s *Store) ForeignKeysContext(ctx context.Context) ([]store.ForeignKey, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT kcu.constraint_name, kcu.constraint_schema, kcu.table_name,
-		       kcu.column_name, kcu.ordinal_position,
-		       kcu.referenced_table_schema, kcu.referenced_table_name,
-		       kcu.referenced_column_name,
-		       rc.update_rule, rc.delete_rule
-		FROM information_schema.key_column_usage kcu
-		JOIN information_schema.referential_constraints rc
-		  ON rc.constraint_schema = kcu.constraint_schema
-		 AND rc.constraint_name = kcu.constraint_name
-		 AND rc.table_name = kcu.table_name
-		WHERE kcu.constraint_schema = current_schema()
-		  AND kcu.referenced_table_name IS NOT NULL
-		ORDER BY kcu.table_name, kcu.constraint_name, kcu.ordinal_position`)
+		SELECT c.conname,
+		       src_ns.nspname, src_tbl.relname, src_col.attname, src_key.ordinality,
+		       ref_ns.nspname, ref_tbl.relname, ref_col.attname,
+		       CASE c.confupdtype
+		         WHEN 'a' THEN 'NO ACTION'
+		         WHEN 'r' THEN 'RESTRICT'
+		         WHEN 'c' THEN 'CASCADE'
+		         WHEN 'n' THEN 'SET NULL'
+		         WHEN 'd' THEN 'SET DEFAULT'
+		       END,
+		       CASE c.confdeltype
+		         WHEN 'a' THEN 'NO ACTION'
+		         WHEN 'r' THEN 'RESTRICT'
+		         WHEN 'c' THEN 'CASCADE'
+		         WHEN 'n' THEN 'SET NULL'
+		         WHEN 'd' THEN 'SET DEFAULT'
+		       END
+		FROM pg_constraint c
+		JOIN pg_class src_tbl ON src_tbl.oid = c.conrelid
+		JOIN pg_namespace src_ns ON src_ns.oid = src_tbl.relnamespace
+		JOIN pg_class ref_tbl ON ref_tbl.oid = c.confrelid
+		JOIN pg_namespace ref_ns ON ref_ns.oid = ref_tbl.relnamespace
+		CROSS JOIN LATERAL unnest(c.conkey) WITH ORDINALITY AS src_key(attnum, ordinality)
+		JOIN pg_attribute src_col
+		  ON src_col.attrelid = c.conrelid AND src_col.attnum = src_key.attnum
+		CROSS JOIN LATERAL unnest(c.confkey) WITH ORDINALITY AS ref_key(attnum, ordinality)
+		JOIN pg_attribute ref_col
+		  ON ref_col.attrelid = c.confrelid AND ref_col.attnum = ref_key.attnum
+		 AND ref_key.ordinality = src_key.ordinality
+		WHERE c.contype = 'f' AND src_ns.nspname = current_schema()
+		ORDER BY src_tbl.relname, c.conname, src_key.ordinality`)
 	if err != nil {
 		return nil, fmt.Errorf("store.ForeignKeys: %w", err)
 	}
