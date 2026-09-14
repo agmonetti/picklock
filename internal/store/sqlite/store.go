@@ -39,6 +39,9 @@ func New(cfg conn.ConnectionConfig) (*Store, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", store.ErrConnection, err)
 	}
+	if isMemory(cfg.Path) {
+		db.SetMaxOpenConns(1)
+	}
 	if err := db.Ping(); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("%w: %v", store.ErrConnection, err)
@@ -215,7 +218,8 @@ func (s *Store) foreignKeysForTable(ctx context.Context, table string) ([]store.
 	var order []int
 	for rows.Next() {
 		var id, seq int
-		var refTable, from, to, onUpdate, onDelete, match string
+		var refTable, from, onUpdate, onDelete, match string
+		var to sql.NullString
 		if err := rows.Scan(&id, &seq, &refTable, &from, &to, &onUpdate, &onDelete, &match); err != nil {
 			return nil, fmt.Errorf("store.ForeignKeys(%s): %w", table, err)
 		}
@@ -226,7 +230,7 @@ func (s *Store) foreignKeysForTable(ctx context.Context, table string) ([]store.
 			order = append(order, id)
 		}
 		fk.Columns = append(fk.Columns, from)
-		fk.ReferencedColumns = append(fk.ReferencedColumns, to)
+		fk.ReferencedColumns = append(fk.ReferencedColumns, to.String)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("store.ForeignKeys(%s): %w", table, err)

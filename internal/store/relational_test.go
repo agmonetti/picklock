@@ -30,7 +30,6 @@ func TestRelationalCatalogClassifiesJoinTables(t *testing.T) {
 	exec("CREATE TABLE sellers (id INTEGER PRIMARY KEY)")
 	exec("CREATE TABLE discount_products (id_discount INTEGER NOT NULL REFERENCES discounts(id), id_product INTEGER NOT NULL REFERENCES products(id), PRIMARY KEY (id_discount, id_product))")
 	exec("CREATE TABLE order_items (id INTEGER PRIMARY KEY, order_id INTEGER REFERENCES discounts(id), product_id INTEGER REFERENCES products(id), quantity INTEGER NOT NULL)")
-
 	items, err := ds.Catalog().ListObjects(context.Background())
 	if err != nil {
 		t.Fatalf("ListObjects: %v", err)
@@ -97,5 +96,35 @@ func TestRelationalStructurePreservesCompositeForeignKeyOrder(t *testing.T) {
 	}
 	if len(fk.ReferencedColumns) != 2 || fk.ReferencedColumns[0] != "a" || fk.ReferencedColumns[1] != "b" {
 		t.Errorf("ReferencedColumns = %v, want [a b]", fk.ReferencedColumns)
+	}
+}
+
+func TestSQLiteForeignKeyWithoutReferencedColumn(t *testing.T) {
+	cfg := conn.New(conn.DriverSQLite)
+	cfg.Path = ":memory:"
+	ds, err := store.New(cfg)
+	if err != nil {
+		t.Fatalf("store.New: %v", err)
+	}
+	defer ds.Close()
+
+	for _, query := range []string{
+		"CREATE TABLE parent (id INTEGER PRIMARY KEY)",
+		"CREATE TABLE child (parent_id INTEGER REFERENCES parent)",
+	} {
+		if _, err := ds.Query().Execute(context.Background(), query, 0, 100); err != nil {
+			t.Fatalf("execute %q: %v", query, err)
+		}
+	}
+	view, err := ds.Inspect(context.Background(), "child")
+	if err != nil {
+		t.Fatalf("Inspect: %v", err)
+	}
+	fks := view.(*store.RelationalStructure).ForeignKeys
+	if len(fks) != 1 {
+		t.Fatalf("ForeignKeys = %d, want 1", len(fks))
+	}
+	if fks[0].ReferencedTable != "parent" || len(fks[0].ReferencedColumns) != 1 || fks[0].ReferencedColumns[0] != "" {
+		t.Errorf("ForeignKey = %+v, want parent with implicit referenced column", fks[0])
 	}
 }
