@@ -187,6 +187,57 @@ func (s *Store) Indexes(table string) ([]store.Index, error) {
 	return indexes, nil
 }
 
+// ForeignKeysContext returns all foreign-key constraints in the database.
+func (s *Store) ForeignKeysContext(ctx context.Context) ([]store.ForeignKey, error) {
+	tables, err := s.Tables()
+	if err != nil {
+		return nil, fmt.Errorf("store.ForeignKeys: %w", err)
+	}
+	var out []store.ForeignKey
+	for _, table := range tables {
+		fks, err := s.foreignKeysForTable(ctx, table)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, fks...)
+	}
+	return out, nil
+}
+
+func (s *Store) foreignKeysForTable(ctx context.Context, table string) ([]store.ForeignKey, error) {
+	rows, err := s.db.QueryContext(ctx, "PRAGMA foreign_key_list("+QuoteIdent(table)+")")
+	if err != nil {
+		return nil, fmt.Errorf("store.ForeignKeys(%s): %w", table, err)
+	}
+	defer rows.Close()
+
+	byID := make(map[int]*store.ForeignKey)
+	var order []int
+	for rows.Next() {
+		var id, seq int
+		var refTable, from, to, onUpdate, onDelete, match string
+		if err := rows.Scan(&id, &seq, &refTable, &from, &to, &onUpdate, &onDelete, &match); err != nil {
+			return nil, fmt.Errorf("store.ForeignKeys(%s): %w", table, err)
+		}
+		fk, ok := byID[id]
+		if !ok {
+			fk = &store.ForeignKey{Table: table, ReferencedTable: refTable, UpdateRule: onUpdate, DeleteRule: onDelete}
+			byID[id] = fk
+			order = append(order, id)
+		}
+		fk.Columns = append(fk.Columns, from)
+		fk.ReferencedColumns = append(fk.ReferencedColumns, to)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("store.ForeignKeys(%s): %w", table, err)
+	}
+	out := make([]store.ForeignKey, 0, len(order))
+	for _, id := range order {
+		out = append(out, *byID[id])
+	}
+	return out, nil
+}
+
 func (s *Store) indexColumns(index string) ([]string, error) {
 	rows, err := s.db.Query("PRAGMA index_info(" + QuoteIdent(index) + ")")
 	if err != nil {

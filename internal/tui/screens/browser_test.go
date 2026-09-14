@@ -684,3 +684,22 @@ func TestRenderRowDetail_NullValue(t *testing.T) {
 		t.Errorf("detail view for NULL field must contain ∅: %q", plain)
 	}
 }
+func TestRenderSidebar_GroupsRelationTables(t *testing.T) {
+	b := &browser.Browser{
+		Items: []store.CatalogItem{
+			{Name: "discounts", Kind: store.CatalogItemTable, Group: "TABLES"},
+			{Name: "discount_products", Kind: store.CatalogItemRelation, Group: "RELATIONS", Badge: "relation"},
+		},
+		ActiveTable: "discounts",
+	}
+	out := RenderSidebar(b, 0, 40, 5)
+	if !strings.Contains(out, "TABLES") || !strings.Contains(out, "RELATIONS") {
+		t.Fatalf("sidebar groups missing: %q", out)
+	}
+	if !strings.Contains(out, "discount_products [relation]") {
+		t.Errorf("relation item missing: %q", out)
+	}
+	if got := SidebarItemAtLine(b, 0, 5, 3); got != 1 {
+		t.Errorf("relation line maps to item %d, want 1", got)
+	}
+}

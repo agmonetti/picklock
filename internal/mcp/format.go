@@ -164,14 +164,16 @@ func formatInspection(iv store.InspectionView) string {
 			}
 			fmt.Fprintf(&b, "  %-30s %s%s%s\n", c.Name, c.Type, flags, def)
 		}
-		if len(v.Indexes) > 0 {
-			b.WriteString("\nIndexes:\n")
-			for _, idx := range v.Indexes {
-				u := ""
-				if idx.Unique {
-					u = " UNIQUE"
-				}
-				fmt.Fprintf(&b, "  %s%s (%s)\n", idx.Name, u, strings.Join(idx.Columns, ", "))
+		if len(v.ForeignKeys) > 0 {
+			b.WriteString("\nForeign keys:\n")
+			for _, fk := range v.ForeignKeys {
+				fmt.Fprintf(&b, "  %s -> %s.%s\n", strings.Join(fk.Columns, ", "), fk.ReferencedTable, strings.Join(fk.ReferencedColumns, ", "))
+			}
+		}
+		if len(v.ReferencedBy) > 0 {
+			b.WriteString("\nReferenced by:\n")
+			for _, fk := range v.ReferencedBy {
+				fmt.Fprintf(&b, "  %s.%s -> %s\n", fk.Table, strings.Join(fk.Columns, ", "), strings.Join(fk.ReferencedColumns, ", "))
 			}
 		}
 

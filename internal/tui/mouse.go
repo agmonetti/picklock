@@ -270,9 +270,8 @@ func (m *Model) selectAt(wx, wy int, layout screens.WorkspaceLayout) {
 		if m.browser == nil {
 			return
 		}
-		offset, _ := screens.SidebarWindow(m.sidebarCursor, layout.MainH+layout.EditorH-1)
-		idx := offset + (wy - 1)
-		if idx >= 0 && idx < len(m.browser.Tables) {
+		line := wy - 1
+		if idx := screens.SidebarItemAtLine(m.browser, m.sidebarCursor, layout.MainH+layout.EditorH-1, line); idx >= 0 {
 			m.sidebarCursor = idx
 		}
 	case layout.ShowEditor && (!layout.ShowMain || wy > layout.MainH):

@@ -170,6 +170,64 @@ func (s *Store) Indexes(table string) ([]store.Index, error) {
 	return indexes, nil
 }
 
+// ForeignKeysContext returns all foreign-key constraints in the current database.
+func (s *Store) ForeignKeysContext(ctx context.Context) ([]store.ForeignKey, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT kcu.constraint_name, kcu.table_schema, kcu.table_name,
+		       kcu.column_name, kcu.ordinal_position,
+		       kcu.referenced_table_schema, kcu.referenced_table_name,
+		       kcu.referenced_column_name,
+		       COALESCE(rc.update_rule, 'NO ACTION'),
+		       COALESCE(rc.delete_rule, 'NO ACTION')
+		FROM information_schema.key_column_usage kcu
+		LEFT JOIN information_schema.referential_constraints rc
+		  ON rc.constraint_schema = kcu.constraint_schema
+		 AND rc.constraint_name = kcu.constraint_name
+		 AND rc.table_name = kcu.table_name
+		WHERE kcu.table_schema = DATABASE()
+		  AND kcu.referenced_table_name IS NOT NULL
+		ORDER BY kcu.table_name, kcu.constraint_name, kcu.ordinal_position`)
+	if err != nil {
+		return nil, fmt.Errorf("store.ForeignKeys: %w", err)
+	}
+	defer rows.Close()
+
+	var out []store.ForeignKey
+	byName := make(map[string]*store.ForeignKey)
+	var order []string
+	for rows.Next() {
+		var (
+			name, schema, table, column string
+			ordinal                     int
+			refSchema, refTable, refCol sql.NullString
+			updateRule, deleteRule      sql.NullString
+		)
+		if err := rows.Scan(&name, &schema, &table, &column, &ordinal, &refSchema, &refTable, &refCol, &updateRule, &deleteRule); err != nil {
+			return nil, fmt.Errorf("store.ForeignKeys: %w", err)
+		}
+		key := schema + "\x00" + table + "\x00" + name
+		fk, ok := byName[key]
+		if !ok {
+			fk = &store.ForeignKey{
+				Name: name, TableSchema: schema, Table: table,
+				ReferencedSchema: refSchema.String, ReferencedTable: refTable.String,
+				UpdateRule: updateRule.String, DeleteRule: deleteRule.String,
+			}
+			byName[key] = fk
+			order = append(order, key)
+		}
+		fk.Columns = append(fk.Columns, column)
+		fk.ReferencedColumns = append(fk.ReferencedColumns, refCol.String)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("store.ForeignKeys: %w", err)
+	}
+	for _, key := range order {
+		out = append(out, *byName[key])
+	}
+	return out, nil
+}
+
 // Query runs arbitrary SQL.
 func (s *Store) Query(sql string) (*store.Result, error) {
 	return s.QueryContext(context.Background(), sql)

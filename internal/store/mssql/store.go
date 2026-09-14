@@ -184,6 +184,66 @@ func (s *Store) Indexes(table string) ([]store.Index, error) {
 	return indexes, nil
 }
 
+// ForeignKeysContext returns all foreign-key constraints in the current schema.
+func (s *Store) ForeignKeysContext(ctx context.Context) ([]store.ForeignKey, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT fk.name, sch_parent.name, t_parent.name, c_parent.name,
+		       fkc.constraint_column_id, sch_ref.name, t_ref.name,
+		       c_ref.name, fk.update_referential_action_desc,
+		       fk.delete_referential_action_desc
+		FROM sys.foreign_keys fk
+		JOIN sys.foreign_key_columns fkc
+		  ON fkc.constraint_object_id = fk.object_id
+		JOIN sys.tables t_parent ON t_parent.object_id = fk.parent_object_id
+		JOIN sys.schemas sch_parent ON sch_parent.schema_id = t_parent.schema_id
+		JOIN sys.columns c_parent
+		  ON c_parent.object_id = t_parent.object_id
+		 AND c_parent.column_id = fkc.parent_column_id
+		JOIN sys.tables t_ref ON t_ref.object_id = fk.referenced_object_id
+		JOIN sys.schemas sch_ref ON sch_ref.schema_id = t_ref.schema_id
+		JOIN sys.columns c_ref
+		  ON c_ref.object_id = t_ref.object_id
+		 AND c_ref.column_id = fkc.referenced_column_id
+		WHERE sch_parent.name = SCHEMA_NAME()
+		ORDER BY t_parent.name, fk.name, fkc.constraint_column_id`)
+	if err != nil {
+		return nil, fmt.Errorf("store.ForeignKeys: %w", err)
+	}
+	defer rows.Close()
+
+	var out []store.ForeignKey
+	byName := make(map[string]*store.ForeignKey)
+	var order []string
+	for rows.Next() {
+		var name, schema, table, column string
+		var ordinal int
+		var refSchema, refTable, refCol, updateRule, deleteRule string
+		if err := rows.Scan(&name, &schema, &table, &column, &ordinal, &refSchema, &refTable, &refCol, &updateRule, &deleteRule); err != nil {
+			return nil, fmt.Errorf("store.ForeignKeys: %w", err)
+		}
+		key := schema + "\x00" + table + "\x00" + name
+		fk, ok := byName[key]
+		if !ok {
+			fk = &store.ForeignKey{
+				Name: name, TableSchema: schema, Table: table,
+				ReferencedSchema: refSchema, ReferencedTable: refTable,
+				UpdateRule: updateRule, DeleteRule: deleteRule,
+			}
+			byName[key] = fk
+			order = append(order, key)
+		}
+		fk.Columns = append(fk.Columns, column)
+		fk.ReferencedColumns = append(fk.ReferencedColumns, refCol)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("store.ForeignKeys: %w", err)
+	}
+	for _, key := range order {
+		out = append(out, *byName[key])
+	}
+	return out, nil
+}
+
 // Query runs arbitrary SQL.
 func (s *Store) Query(sql string) (*store.Result, error) {
 	return s.QueryContext(context.Background(), sql)

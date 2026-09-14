@@ -2,8 +2,9 @@ package store
 
 import (
 	"context"
-
 	"github.com/agmonetti/picklock/internal/conn"
+	"sort"
+	"strings"
 )
 
 // RelationalAdapter adapts an internal relational Store to the universal DataSource interface.
@@ -38,17 +39,43 @@ func (a *RelationalAdapter) Catalog() CatalogDescriptor {
 		Title:    "TABLES",
 		ItemNoun: "table",
 		ListObjects: func(ctx context.Context) ([]CatalogItem, error) {
-			tables, err := a.store.Tables()
-			if err != nil {
-				return nil, err
-			}
-			items := make([]CatalogItem, len(tables))
-			for i, t := range tables {
-				items[i] = CatalogItem{Name: t}
-			}
-			return items, nil
+			return a.listCatalogItems(ctx)
 		},
 	}
+}
+
+func (a *RelationalAdapter) listCatalogItems(ctx context.Context) ([]CatalogItem, error) {
+	tables, err := a.store.Tables()
+	if err != nil {
+		return nil, err
+	}
+	fks, err := a.store.ForeignKeysContext(ctx)
+	if err != nil {
+		// Foreign-key metadata is optional for browsing. A restricted metadata
+		// view must not make otherwise valid tables disappear.
+		fks = nil
+	}
+	relationTables, err := classifyRelationTables(ctx, a.store, tables, fks)
+	if err != nil {
+		return nil, err
+	}
+
+	tableItems := make([]CatalogItem, 0, len(tables))
+	relationItems := make([]CatalogItem, 0)
+	for _, table := range tables {
+		if relationTables[table] {
+			continue
+		}
+		tableItems = append(tableItems, CatalogItem{Name: table, Kind: CatalogItemTable, Group: "TABLES"})
+	}
+	for table := range relationTables {
+		relationItems = append(relationItems, CatalogItem{
+			Name: table, Kind: CatalogItemRelation, Group: "RELATIONS", Badge: "relation",
+			Metadata: relationSummary(table, fks),
+		})
+	}
+	sort.Slice(relationItems, func(i, j int) bool { return relationItems[i].Name < relationItems[j].Name })
+	return append(tableItems, relationItems...), nil
 }
 
 func (a *RelationalAdapter) Browse(ctx context.Context, req BrowseRequest) (BrowseResponse, error) {
@@ -138,7 +165,93 @@ func (a *RelationalAdapter) Inspect(ctx context.Context, objectName string) (Ins
 	if err != nil {
 		return nil, err
 	}
-	return &RelationalStructure{Columns: cols, Indexes: indexes}, nil
+	fks, err := a.store.ForeignKeysContext(ctx)
+	if err != nil {
+		fks = nil
+	}
+	var outgoing, incoming []ForeignKey
+	for _, fk := range fks {
+		switch {
+		case fk.Table == objectName:
+			outgoing = append(outgoing, fk)
+		case fk.ReferencedTable == objectName:
+			incoming = append(incoming, fk)
+		}
+	}
+	relationTables, err := classifyRelationTables(ctx, a.store, []string{objectName}, fks)
+	if err != nil {
+		return nil, err
+	}
+	return &RelationalStructure{
+		Columns: cols, Indexes: indexes, ForeignKeys: outgoing,
+		ReferencedBy: incoming, RelationTable: relationTables[objectName],
+	}, nil
+}
+
+func classifyRelationTables(ctx context.Context, st Store, tables []string, fks []ForeignKey) (map[string]bool, error) {
+	byTable := make(map[string][]ForeignKey)
+	for _, fk := range fks {
+		byTable[fk.Table] = append(byTable[fk.Table], fk)
+	}
+	out := make(map[string]bool)
+	for _, table := range tables {
+		if len(byTable[table]) < 2 {
+			continue
+		}
+		cols, err := st.Columns(table)
+		if err != nil {
+			return nil, err
+		}
+		if isPureRelationTable(cols, byTable[table]) {
+			out[table] = true
+		}
+	}
+	return out, nil
+}
+
+func isPureRelationTable(cols []Column, fks []ForeignKey) bool {
+	if len(cols) == 0 || len(fks) < 2 {
+		return false
+	}
+	fkColumns := make(map[string]bool, len(cols))
+	for _, fk := range fks {
+		for _, column := range fk.Columns {
+			fkColumns[column] = true
+		}
+	}
+	if len(fkColumns) != len(cols) {
+		return false
+	}
+	for _, col := range cols {
+		if !fkColumns[col.Name] {
+			return false
+		}
+	}
+	return true
+}
+
+func relationSummary(table string, fks []ForeignKey) string {
+	var targets []string
+	for _, fk := range fks {
+		if fk.Table == table && fk.ReferencedTable != "" {
+			targets = append(targets, fk.ReferencedTable)
+		}
+	}
+	sort.Strings(targets)
+	return strings.Join(uniqueStrings(targets), " ↔ ")
+}
+
+func uniqueStrings(values []string) []string {
+	if len(values) < 2 {
+		return values
+	}
+	out := values[:1]
+	for _, value := range values[1:] {
+		if value != out[len(out)-1] {
+			out = append(out, value)
+		}
+	}
+	return out
 }
 
 func (a *RelationalAdapter) Query() QueryExecutor {

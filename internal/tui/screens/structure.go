@@ -20,16 +20,14 @@ func RenderStructure(b *browser.Browser, width, height int) string {
 	if b.Structure != nil {
 		switch s := b.Structure.(type) {
 		case *store.RelationalStructure:
-			renderRelationalStructure(&sb, s.Columns, s.Indexes)
-		case *store.DocumentStructure:
-			renderDocumentStructure(&sb, s)
+			renderRelationalStructure(&sb, s)
 		case *store.KeyValueStructure:
 			renderKeyValueStructure(&sb, s)
 		case *store.GraphStructure:
 			renderGraphStructure(&sb, s)
 		}
 	} else if len(b.Columns) > 0 {
-		renderRelationalStructure(&sb, b.Columns, b.Indexes)
+		renderRelationalStructure(&sb, &store.RelationalStructure{Columns: b.Columns, Indexes: b.Indexes})
 	} else {
 		sb.WriteString(styles.StyleHeaderDim.Render("no structure available for this item"))
 	}
@@ -41,9 +39,12 @@ func RenderStructure(b *browser.Browser, width, height int) string {
 	return strings.Join(lines, "\n")
 }
 
-func renderRelationalStructure(sb *strings.Builder, cols []store.Column, indexes []store.Index) {
+func renderRelationalStructure(sb *strings.Builder, s *store.RelationalStructure) {
+	if s.RelationTable {
+		sb.WriteString(styles.StyleHeader.Render("Relation table") + "\n")
+	}
 	sb.WriteString(styles.StyleHeader.Render("Columns") + "\n")
-	for _, c := range cols {
+	for _, c := range s.Columns {
 		var flags []string
 		if c.PK {
 			flags = append(flags, "PK")
@@ -62,11 +63,24 @@ func renderRelationalStructure(sb *strings.Builder, cols []store.Column, indexes
 		sb.WriteString(styles.StyleSidebarItem.Render(line) + "\n")
 	}
 
+	if len(s.ForeignKeys) > 0 {
+		sb.WriteString("\n" + styles.StyleHeader.Render("Foreign Keys") + "\n")
+		for _, fk := range s.ForeignKeys {
+			sb.WriteString(styles.StyleSidebarItem.Render("  "+formatForeignKey(fk, false)) + "\n")
+		}
+	}
+	if len(s.ReferencedBy) > 0 {
+		sb.WriteString("\n" + styles.StyleHeader.Render("Referenced By") + "\n")
+		for _, fk := range s.ReferencedBy {
+			sb.WriteString(styles.StyleSidebarItem.Render("  "+formatForeignKey(fk, true)) + "\n")
+		}
+	}
+
 	sb.WriteString("\n" + styles.StyleHeader.Render("Indexes") + "\n")
-	if len(indexes) == 0 {
+	if len(s.Indexes) == 0 {
 		sb.WriteString(styles.StyleHeaderDim.Render("  no indexes") + "\n")
 	}
-	for _, ix := range indexes {
+	for _, ix := range s.Indexes {
 		uniq := ""
 		if ix.Unique {
 			uniq = " UNIQUE"
@@ -74,6 +88,16 @@ func renderRelationalStructure(sb *strings.Builder, cols []store.Column, indexes
 		line := fmt.Sprintf("  %-24s (%s)%s", ix.Name, strings.Join(ix.Columns, ", "), uniq)
 		sb.WriteString(styles.StyleSidebarItem.Render(line) + "\n")
 	}
+}
+
+func formatForeignKey(fk store.ForeignKey, incoming bool) string {
+	from := strings.Join(fk.Columns, ", ")
+	to := fk.ReferencedTable + "." + strings.Join(fk.ReferencedColumns, ", ")
+	if incoming {
+		from = fk.Table + "." + from
+		return fmt.Sprintf("%s → %s", from, to)
+	}
+	return fmt.Sprintf("%s → %s", from, to)
 }
 
 func renderDocumentStructure(sb *strings.Builder, s *store.DocumentStructure) {

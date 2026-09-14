@@ -20,6 +20,20 @@ type Column struct {
 	Clustering bool // Cassandra Clustering Column (CC)
 }
 
+// ForeignKey describes one referential constraint, preserving column order
+// for composite keys.
+type ForeignKey struct {
+	Name              string
+	TableSchema       string
+	Table             string
+	Columns           []string
+	ReferencedSchema  string
+	ReferencedTable   string
+	ReferencedColumns []string
+	UpdateRule        string
+	DeleteRule        string
+}
+
 // Index describes an index of a table or collection.
 type Index struct {
 	Name    string
@@ -204,10 +218,13 @@ type InspectionView interface {
 	Title() string
 }
 
-// RelationalStructure describes columns and indexes of a table.
+// RelationalStructure describes columns, indexes, and relationships of a table.
 type RelationalStructure struct {
-	Columns []Column
-	Indexes []Index
+	Columns       []Column
+	Indexes       []Index
+	ForeignKeys   []ForeignKey
+	ReferencedBy  []ForeignKey
+	RelationTable bool
 }
 
 func (r *RelationalStructure) inspectionView() {}
@@ -247,6 +264,23 @@ type KeyValueStructure struct {
 func (k *KeyValueStructure) inspectionView() {}
 func (k *KeyValueStructure) Title() string   { return fmt.Sprintf("Key Info: %s", k.Key) }
 
+// CatalogItemKind identifies the semantic kind of a catalog object.
+type CatalogItemKind string
+
+const (
+	CatalogItemTable    CatalogItemKind = "table"
+	CatalogItemRelation CatalogItemKind = "relation"
+)
+
+// CatalogItem is an object in the navigation sidebar.
+type CatalogItem struct {
+	Name     string
+	Kind     CatalogItemKind
+	Group    string
+	Badge    string // e.g. "hash", "list", "set", "zset", "relation"
+	Metadata string // e.g. count or size
+}
+
 // GraphStructure describes Node Label schema, properties, constraints, and relationships.
 type GraphStructure struct {
 	LabelName     string
@@ -260,13 +294,6 @@ func (g *GraphStructure) inspectionView() {}
 func (g *GraphStructure) Title() string   { return fmt.Sprintf("Label: %s", g.LabelName) }
 
 // --- Catalog & Browsing Models ---
-
-// CatalogItem is an object in the navigation sidebar.
-type CatalogItem struct {
-	Name     string
-	Badge    string // e.g. "hash", "list", "set", "zset"
-	Metadata string // e.g. count or size
-}
 
 // CatalogDescriptor defines the sidebar title and object discovery mechanism.
 type CatalogDescriptor struct {
@@ -331,6 +358,7 @@ type Store interface {
 	Tables() ([]string, error)
 	Columns(table string) ([]Column, error)
 	Indexes(table string) ([]Index, error)
+	ForeignKeysContext(ctx context.Context) ([]ForeignKey, error)
 
 	Query(sql string) (*Result, error)
 	Exec(sql string) (int64, error)

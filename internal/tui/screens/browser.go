@@ -21,42 +21,152 @@ func SidebarWindow(cursor, height int) (offset, visible int) {
 	return
 }
 
-// RenderSidebar renders the catalog list with a selection cursor and badges.
+// RenderSidebar renders the catalog list with grouped semantic objects.
 func RenderSidebar(b *browser.Browser, cursor, width, height int) string {
 	if b == nil || width < 6 || height < 1 {
 		return ""
 	}
-	n := len(b.Tables)
-	if n == 0 {
+	items := b.Items
+	if len(items) == 0 && len(b.Tables) > 0 {
+		items = make([]store.CatalogItem, len(b.Tables))
+		for i, name := range b.Tables {
+			items[i] = store.CatalogItem{Name: name, Kind: store.CatalogItemTable}
+		}
+	}
+	if len(items) == 0 {
 		return ""
 	}
-	if cursor >= n {
-		cursor = n - 1
+	if cursor >= len(items) {
+		cursor = len(items) - 1
 	}
 	if cursor < 0 {
 		cursor = 0
 	}
-	offset, _ := SidebarWindow(cursor, height)
+	showGroups := sidebarHasGroups(items)
+
+	type sidebarLine struct {
+		text      string
+		itemIndex int
+		group     bool
+	}
+	lines := make([]sidebarLine, 0, len(items)+2)
+	lastGroup := ""
+	for i, item := range items {
+		if showGroups && item.Group != "" && item.Group != lastGroup {
+			lines = append(lines, sidebarLine{text: item.Group, itemIndex: -1, group: true})
+			lastGroup = item.Group
+		}
+		badge := ""
+		if item.Badge != "" {
+			badge = " [" + item.Badge + "]"
+		}
+		lines = append(lines, sidebarLine{text: truncate(item.Name+badge, width-2), itemIndex: i})
+	}
+
+	cursorLine := 0
+	for i, line := range lines {
+		if line.itemIndex == cursor {
+			cursorLine = i
+			break
+		}
+	}
+	offset := cursorLine - height + 1
+	if offset < 0 {
+		offset = 0
+	}
 
 	var sb strings.Builder
-	for i := offset; i < n && i < offset+height; i++ {
-		name := b.Tables[i]
-		badge := ""
-		if i < len(b.Items) && b.Items[i].Badge != "" {
-			badge = " [" + b.Items[i].Badge + "]"
+	for i := offset; i < len(lines) && i < offset+height; i++ {
+		line := lines[i]
+		if line.group {
+			sb.WriteString(styles.StyleHeader.Render(line.text))
+		} else {
+			switch {
+			case line.itemIndex == cursor:
+				sb.WriteString(styles.StyleSidebarActive.Render("> " + line.text))
+			case items[line.itemIndex].Name == b.ActiveTable:
+				sb.WriteString(styles.StyleSidebarActiveTable.Render("  " + line.text))
+			default:
+				sb.WriteString(styles.StyleSidebarItem.Render("  " + line.text))
+			}
 		}
-		itemText := truncate(name+badge, width-2)
-		switch {
-		case i == cursor:
-			sb.WriteString(styles.StyleSidebarActive.Render("> " + itemText))
-		case b.Tables[i] == b.ActiveTable:
-			sb.WriteString(styles.StyleSidebarActiveTable.Render("  " + itemText))
-		default:
-			sb.WriteString(styles.StyleSidebarItem.Render("  " + itemText))
+		if i+1 < len(lines) && i+1 < offset+height {
+			sb.WriteByte('\n')
 		}
-		sb.WriteString("\n")
 	}
 	return sb.String()
+}
+
+// SidebarItemAtLine maps a rendered sidebar line to a catalog item index.
+func SidebarItemAtLine(b *browser.Browser, cursor, height, line int) int {
+	if b == nil || line < 0 || height < 1 {
+		return -1
+	}
+	items := b.Items
+	if len(items) == 0 {
+		items = make([]store.CatalogItem, len(b.Tables))
+		for i, name := range b.Tables {
+			items[i] = store.CatalogItem{Name: name, Kind: store.CatalogItemTable}
+		}
+	}
+	if len(items) == 0 {
+		return -1
+	}
+	cursor = maxSidebarCursor(cursor, len(items))
+	showGroups := sidebarHasGroups(items)
+	type sidebarLine struct{ itemIndex int }
+	lines := make([]sidebarLine, 0, len(items)+2)
+	lastGroup := ""
+	for i, item := range items {
+		if showGroups && item.Group != "" && item.Group != lastGroup {
+			lines = append(lines, sidebarLine{itemIndex: -1})
+			lastGroup = item.Group
+		}
+		lines = append(lines, sidebarLine{itemIndex: i})
+	}
+	cursorLine := 0
+	for i, entry := range lines {
+		if entry.itemIndex == cursor {
+			cursorLine = i
+			break
+		}
+	}
+	offset := cursorLine - height + 1
+	if offset < 0 {
+		offset = 0
+	}
+	idx := offset + line
+	if idx < 0 || idx >= len(lines) || lines[idx].itemIndex < 0 {
+		return -1
+	}
+	return lines[idx].itemIndex
+}
+
+func sidebarHasGroups(items []store.CatalogItem) bool {
+	first := ""
+	for _, item := range items {
+		if item.Group == "" {
+			continue
+		}
+		if first == "" {
+			first = item.Group
+			continue
+		}
+		if item.Group != first {
+			return true
+		}
+	}
+	return false
+}
+
+func maxSidebarCursor(cursor, n int) int {
+	if cursor < 0 {
+		return 0
+	}
+	if cursor >= n {
+		return n - 1
+	}
+	return cursor
 }
 
 // TableWindow returns the visible window of a data table.
