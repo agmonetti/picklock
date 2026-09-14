@@ -1,6 +1,7 @@
 package postgres
 
 import (
+	"context"
 	"os"
 	"testing"
 
@@ -101,6 +102,14 @@ func TestIntegration(t *testing.T) {
 
 	if v, err := s.Version(); err != nil || v == "" {
 		t.Errorf("Version = %q, err=%v", v, err)
+	}
+
+	fks, err := s.ForeignKeysContext(context.Background())
+	if err != nil {
+		t.Fatalf("ForeignKeysContext: %v", err)
+	}
+	if len(fks) != 0 {
+		t.Errorf("ForeignKeysContext = %v, want no foreign keys", fks)
 	}
 }
 

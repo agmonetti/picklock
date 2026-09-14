@@ -1,6 +1,7 @@
 package mysql
 
 import (
+	"context"
 	"os"
 	"testing"
 
@@ -120,6 +121,14 @@ func testStore(t *testing.T, cfg conn.ConnectionConfig) {
 
 	if v, err := s.Version(); err != nil || v == "" {
 		t.Errorf("Version = %q, err=%v", v, err)
+	}
+
+	fks, err := s.ForeignKeysContext(context.Background())
+	if err != nil {
+		t.Fatalf("ForeignKeysContext: %v", err)
+	}
+	if len(fks) != 0 {
+		t.Errorf("ForeignKeysContext = %v, want no foreign keys", fks)
 	}
 }
 
