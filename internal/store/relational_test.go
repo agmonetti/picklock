@@ -29,6 +29,7 @@ func TestRelationalCatalogClassifiesJoinTables(t *testing.T) {
 	exec("CREATE TABLE products (id INTEGER PRIMARY KEY)")
 	exec("CREATE TABLE sellers (id INTEGER PRIMARY KEY)")
 	exec("CREATE TABLE discount_products (id_discount INTEGER NOT NULL REFERENCES discounts(id), id_product INTEGER NOT NULL REFERENCES products(id), PRIMARY KEY (id_discount, id_product))")
+	exec("CREATE TABLE q9 (discount_ref INTEGER NOT NULL REFERENCES discounts(id), seller_ref INTEGER NOT NULL REFERENCES sellers(id), PRIMARY KEY (discount_ref, seller_ref))")
 	exec("CREATE TABLE order_items (id INTEGER PRIMARY KEY, order_id INTEGER REFERENCES discounts(id), product_id INTEGER REFERENCES products(id), quantity INTEGER NOT NULL)")
 	items, err := ds.Catalog().ListObjects(context.Background())
 	if err != nil {
@@ -40,6 +41,9 @@ func TestRelationalCatalogClassifiesJoinTables(t *testing.T) {
 	}
 	if got := kinds["discount_products"]; got != store.CatalogItemRelation {
 		t.Errorf("discount_products kind = %q, want relation", got)
+	}
+	if got := kinds["q9"]; got != store.CatalogItemRelation {
+		t.Errorf("q9 kind = %q, want relation without name heuristic", got)
 	}
 	if got := kinds["order_items"]; got != store.CatalogItemTable {
 		t.Errorf("order_items kind = %q, want table", got)
@@ -56,8 +60,8 @@ func TestRelationalCatalogClassifiesJoinTables(t *testing.T) {
 	if !ok {
 		t.Fatalf("Inspect = %T, want RelationalStructure", view)
 	}
-	if len(structure.ReferencedBy) != 2 {
-		t.Fatalf("ReferencedBy = %d, want 2", len(structure.ReferencedBy))
+	if len(structure.ReferencedBy) != 3 {
+		t.Fatalf("ReferencedBy = %d, want 3", len(structure.ReferencedBy))
 	}
 	if len(structure.ReferencedBy[0].Columns) == 0 || len(structure.ReferencedBy[0].ReferencedColumns) == 0 {
 		t.Errorf("ReferencedBy has incomplete columns: %+v", structure.ReferencedBy)
