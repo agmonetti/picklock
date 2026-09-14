@@ -173,7 +173,9 @@ func formatInspection(iv store.InspectionView) string {
 		if len(v.ReferencedBy) > 0 {
 			b.WriteString("\nReferenced by:\n")
 			for _, fk := range v.ReferencedBy {
-				fmt.Fprintf(&b, "  %s.%s -> %s\n", fk.Table, strings.Join(fk.Columns, ", "), strings.Join(fk.ReferencedColumns, ", "))
+				fmt.Fprintf(&b, "  %s.%s -> %s.%s\n",
+					fk.Table, strings.Join(fk.Columns, ", "),
+					fk.ReferencedTable, strings.Join(fk.ReferencedColumns, ", "))
 			}
 		}
 

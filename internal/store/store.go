@@ -228,7 +228,7 @@ type RelationalStructure struct {
 }
 
 func (r *RelationalStructure) inspectionView() {}
-func (r *RelationalStructure) Title() string   { return "Columns & Indexes" }
+func (r *RelationalStructure) Title() string   { return "Columns, Indexes & Relationships" }
 
 // FieldSchema represents a field name and inferred type.
 type FieldSchema struct {
