@@ -9,18 +9,79 @@ import (
 	"github.com/agmonetti/picklock/internal/tui/styles"
 )
 
-// RenderStructure renders the structural description of the active item.
+// RenderStructure renders the structural description without scrolling.
 func RenderStructure(b *browser.Browser, width, height int) string {
+	return RenderStructureScrolled(b, 0, width, height)
+}
+
+// RenderStructureScrolled renders the visible structural description of the active item.
+// scroll is the zero-based line offset within the complete inspection.
+func RenderStructureScrolled(b *browser.Browser, scroll, width, height int) string {
 	if b == nil {
 		return styles.StyleHeaderDim.Render("no connection")
 	}
+	if height < 1 {
+		return ""
+	}
 
+	lines := structureLines(b)
+	if len(lines) == 0 {
+		return ""
+	}
+
+	indicator := 0
+	if len(lines) > height {
+		indicator = 1
+	}
+	viewportHeight := height - indicator
+	if viewportHeight < 1 {
+		viewportHeight = 1
+	}
+	maxScroll := len(lines) - viewportHeight
+	if maxScroll < 0 {
+		maxScroll = 0
+	}
+	if scroll < 0 {
+		scroll = 0
+	}
+	if scroll > maxScroll {
+		scroll = maxScroll
+	}
+
+	end := scroll + viewportHeight
+	if end > len(lines) {
+		end = len(lines)
+	}
+	visible := lines[scroll:end]
+	if indicator > 0 {
+		hint := structureScrollHint(scroll, maxScroll)
+		visible = append(visible, styles.StyleHeaderDim.Render(hint))
+	}
+	return strings.Join(visible, "\n")
+}
+
+// StructureViewport returns the complete line count and the maximum scroll
+// offset for an inspection rendered in a viewport of the given height.
+func StructureViewport(b *browser.Browser, height int) (lineCount, maxScroll int) {
+	lines := structureLines(b)
+	if height < 1 || len(lines) <= height {
+		return len(lines), 0
+	}
+	viewportHeight := height - 1
+	if viewportHeight < 1 {
+		viewportHeight = 1
+	}
+	return len(lines), len(lines) - viewportHeight
+}
+
+func structureLines(b *browser.Browser) []string {
 	var sb strings.Builder
-
 	if b.Structure != nil {
 		switch s := b.Structure.(type) {
 		case *store.RelationalStructure:
 			renderRelationalStructure(&sb, s)
+		case *store.DocumentStructure:
+			renderDocumentStructure(&sb, s)
 		case *store.KeyValueStructure:
 			renderKeyValueStructure(&sb, s)
 		case *store.GraphStructure:
@@ -31,12 +92,18 @@ func RenderStructure(b *browser.Browser, width, height int) string {
 	} else {
 		sb.WriteString(styles.StyleHeaderDim.Render("no structure available for this item"))
 	}
+	return strings.Split(strings.TrimSuffix(sb.String(), "\n"), "\n")
+}
 
-	lines := strings.Split(sb.String(), "\n")
-	if len(lines) > height {
-		lines = lines[:height]
+func structureScrollHint(scroll, maxScroll int) string {
+	switch {
+	case scroll == 0:
+		return fmt.Sprintf("↓ %d lines below", maxScroll)
+	case scroll == maxScroll:
+		return fmt.Sprintf("↑ %d lines above", maxScroll)
+	default:
+		return fmt.Sprintf("↑ %d above · ↓ %d below", scroll, maxScroll-scroll)
 	}
-	return strings.Join(lines, "\n")
 }
 
 func renderRelationalStructure(sb *strings.Builder, s *store.RelationalStructure) {

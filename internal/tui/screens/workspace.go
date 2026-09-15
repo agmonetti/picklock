@@ -145,6 +145,14 @@ func clampInt(v, lo, hi int) int {
 func RenderWorkspace(b *browser.Browser, es *EditorScreen, e *editor.Editor,
 	focus WorkspaceFocus, structure bool, layout WorkspaceLayout, sidebarCursor, colScroll int,
 	width, height int) string {
+	return RenderWorkspaceScrolled(b, es, e, focus, structure, 0, layout, sidebarCursor, colScroll, width, height)
+}
+
+// RenderWorkspaceScrolled renders the single working screen with a structure
+// inspector offset.
+func RenderWorkspaceScrolled(b *browser.Browser, es *EditorScreen, e *editor.Editor,
+	focus WorkspaceFocus, structure bool, structureScroll int, layout WorkspaceLayout, sidebarCursor, colScroll int,
+	width, height int) string {
 	if width < 10 || height < 3 {
 		return styles.StyleHeaderDim.Render("terminal too small")
 	}
@@ -186,7 +194,7 @@ func RenderWorkspace(b *browser.Browser, es *EditorScreen, e *editor.Editor,
 		if b == nil {
 			mainContent = styles.StyleHeaderDim.Render("no connection")
 		} else if structure {
-			mainContent = RenderStructure(b, contentW(rightW), mainBodyH)
+			mainContent = RenderStructureScrolled(b, structureScroll, contentW(rightW), mainBodyH)
 		} else {
 			mainContent = RenderMainBrowser(b, colScroll, contentW(rightW), mainBodyH)
 		}
@@ -220,7 +228,7 @@ func RenderWorkspace(b *browser.Browser, es *EditorScreen, e *editor.Editor,
 		if b == nil {
 			mainContent = styles.StyleHeaderDim.Render("no connection")
 		} else if structure {
-			mainContent = RenderStructure(b, contentW(rightW), mainBodyH)
+			mainContent = RenderStructureScrolled(b, structureScroll, contentW(rightW), mainBodyH)
 		} else {
 			mainContent = RenderMainBrowser(b, colScroll, contentW(rightW), mainBodyH)
 		}

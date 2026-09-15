@@ -50,6 +50,7 @@ func (m *Model) handleWorkspaceKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case !typingEditor && key.Matches(msg, m.keys.Inspect):
 		m.showMain = true
 		m.structure = true
+		m.structureScroll = 0
 		m.setFocus(screens.FocusMain)
 		return m, nil
 	case !typingEditor && key.Matches(msg, m.keys.Refresh) && m.browser != nil:
@@ -253,6 +254,7 @@ func (m *Model) selectTable(idx int) tea.Cmd {
 	}
 	m.sidebarCursor = idx
 	m.structure = false
+	m.structureScroll = 0
 	m.colScroll = 0 // reset horizontal scroll when opening a new table
 	name := m.browser.Tables[idx]
 	return m.runBrowserOp(func(b *browser.Browser, st store.DataSource, ctx context.Context) error {
@@ -289,8 +291,13 @@ func (m *Model) handleMainKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.structure = false
 		}
 		return m, nil
+	}
+	if m.structure {
+		return m.handleStructureKeys(msg)
+	}
+	switch {
 	case key.Matches(msg, m.keys.Detail):
-		if !m.structure && b.Data != nil {
+		if b.Data != nil {
 			m.openDetailFromBrowser(b)
 		}
 		return m, nil
@@ -322,6 +329,59 @@ func (m *Model) handleMainKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	return m, nil
+}
+
+func (m *Model) handleStructureKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	innerW := m.width - 2
+	if innerW < 1 {
+		innerW = 1
+	}
+	contentH := m.height - 4
+	if contentH < 1 {
+		contentH = 1
+	}
+	layout := screens.ComputeLayout(innerW, contentH, m.showSidebar, m.showMain, m.showEditor, m.sidebarW, m.editorH)
+	viewportH := layout.MainH - 2
+	if viewportH < 1 {
+		viewportH = 1
+	}
+	page := viewportH - 1
+	if page < 1 {
+		page = 1
+	}
+	switch {
+	case key.Matches(msg, m.keys.Up):
+		m.scrollStructure(-1)
+	case key.Matches(msg, m.keys.Down):
+		m.scrollStructure(1)
+	case key.Matches(msg, m.keys.PageUp):
+		m.scrollStructure(-page)
+	case key.Matches(msg, m.keys.PageDown):
+		m.scrollStructure(page)
+	case key.Matches(msg, m.keys.First):
+		m.structureScroll = 0
+	case key.Matches(msg, m.keys.Last):
+		_, m.structureScroll = screens.StructureViewport(m.browser, viewportH)
+	}
+	m.clampStructureScroll(viewportH)
+	return m, nil
+}
+
+func (m *Model) scrollStructure(delta int) {
+	m.structureScroll += delta
+}
+
+func (m *Model) clampStructureScroll(viewportH int) {
+	if m.browser == nil {
+		m.structureScroll = 0
+		return
+	}
+	_, maxScroll := screens.StructureViewport(m.browser, viewportH)
+	if m.structureScroll < 0 {
+		m.structureScroll = 0
+	} else if m.structureScroll > maxScroll {
+		m.structureScroll = maxScroll
+	}
 }
 
 // scrollColLeft shifts the column viewport one column to the left.

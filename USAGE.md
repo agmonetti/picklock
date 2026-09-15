@@ -28,6 +28,26 @@ go build -o picklock ./cmd/picklock
 ./picklock
 ```
 
+### Update the binary used by Rofi
+
+The desktop entry at `~/.local/share/applications/picklock.desktop` uses
+`Exec=picklock`, and the current command resolves to `~/.local/bin/picklock`.
+After changing the source, rebuild directly over that binary:
+
+```bash
+go build -o "$HOME/.local/bin/picklock" ./cmd/picklock
+```
+
+Confirm the destination and binary:
+
+```bash
+readlink -f "$(command -v picklock)"
+"$HOME/.local/bin/picklock" --print-layout 100 30
+```
+
+Rofi does not need its `.desktop` entry changed. If an already-open shell still
+uses the old executable, run `hash -r`; reopen Rofi afterward.
+
 ### Skip the connection screen with a DSN
 
 ```bash

@@ -635,7 +635,7 @@ func TestModel_ClickFocusesConnectField(t *testing.T) {
 
 func TestModel_MouseIgnoredOnConnectScreen(t *testing.T) {
 	t.Setenv("PICKLOCK_CONFIG_DIR", t.TempDir()) // don't depend on the user's prefs
-	m := newModel(t)                         // starts on the connect screen
+	m := newModel(t)                             // starts on the connect screen
 	m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
 
 	step(t, m, mouseMsg(20, 5, tea.MouseButtonRight, tea.MouseActionPress))
@@ -782,6 +782,29 @@ func TestModel_StructureMode(t *testing.T) {
 	pressKey(t, m, "esc")
 	if m.structure {
 		t.Fatal("structure should be off after esc")
+	}
+}
+
+func TestModel_StructureScrollUsesIndependentViewport(t *testing.T) {
+	t.Setenv("PICKLOCK_CONFIG_DIR", t.TempDir())
+	m := connect(t)
+	columns := make([]store.Column, 20)
+	for i := range columns {
+		columns[i] = store.Column{Name: fmt.Sprintf("column_%02d", i), Type: "TEXT"}
+	}
+	m.browser.Structure = &store.RelationalStructure{Columns: columns}
+	m.structure = true
+	m.focus = screens.FocusMain
+	m.structureScroll = 0
+	_ = m.View()
+
+	cursorBefore := m.browser.Cursor
+	step(t, m, mouseMsg(50, 5, tea.MouseButtonWheelDown, tea.MouseActionPress))
+	if m.structureScroll == 0 {
+		t.Fatal("structure scroll should advance on wheel")
+	}
+	if m.browser.Cursor != cursorBefore {
+		t.Fatalf("row cursor changed while scrolling structure: got %d want %d", m.browser.Cursor, cursorBefore)
 	}
 }
 

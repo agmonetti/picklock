@@ -202,6 +202,9 @@ func (m *Model) scrollAt(wx, wy int, layout screens.WorkspaceLayout, btn tea.Mou
 		m.scrollSidebar(delta * wheelStep)
 	case layout.ShowEditor && (!layout.ShowMain || wy > layout.MainH):
 		m.scrollResults(delta*wheelStep, layout)
+	case layout.ShowMain && m.structure:
+		m.scrollStructure(delta * wheelStep)
+		m.clampStructureScroll(layout.MainH - 2)
 	case layout.ShowMain:
 		return m.scrollMain(delta * wheelStep)
 	}
@@ -276,6 +279,9 @@ func (m *Model) selectAt(wx, wy int, layout screens.WorkspaceLayout) {
 		}
 	case layout.ShowEditor && (!layout.ShowMain || wy > layout.MainH):
 		m.selectResultRow(wy, layout)
+	case layout.ShowMain && m.structure:
+		// The structure inspector is not a row-selectable data table.
+		return
 	case layout.ShowMain:
 		if m.browser == nil {
 			return
@@ -300,9 +306,9 @@ func (m *Model) selectResultRow(wy int, layout screens.WorkspaceLayout) {
 	if layout.ShowMain {
 		editorTop = layout.MainH + 1
 	}
-	startLine, dataRows := screens.EditorResultsLayout(layout.EditorH - 2)
+	startLine, _ := screens.EditorResultsLayout(layout.EditorH - 2)
 	rel := (wy - editorTop - 1) - startLine - 2 // header + sep line above data rows
-	if rel < 0 || rel >= dataRows {
+	if rel < 0 {
 		return
 	}
 	row := m.editorScreen.ResultScroll() + rel

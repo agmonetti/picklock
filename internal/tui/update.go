@@ -45,7 +45,18 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = correctSize(msg.Width, msg.Height)
-
+		if m.structure {
+			innerW := m.width - 2
+			if innerW < 1 {
+				innerW = 1
+			}
+			contentH := m.height - 4
+			if contentH < 1 {
+				contentH = 1
+			}
+			layout := screens.ComputeLayout(innerW, contentH, m.showSidebar, m.showMain, m.showEditor, m.sidebarW, m.editorH)
+			m.clampStructureScroll(layout.MainH - 2)
+		}
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "ctrl+c":

@@ -99,6 +99,9 @@ type Model struct {
 	// horizontal column scroll in the main browser table (index of first visible column)
 	colScroll int
 
+	// vertical scroll offset for the structure inspector
+	structureScroll int
+
 	width           int
 	height          int
 	showSidebar     bool

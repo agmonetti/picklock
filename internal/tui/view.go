@@ -45,8 +45,8 @@ func (m *Model) render() string {
 			content = m.renderExportPrompt(innerW, contentHeight)
 		} else {
 			layout := screens.ComputeLayout(innerW, contentHeight, m.showSidebar, m.showMain, m.showEditor, m.sidebarW, m.editorH)
-			content = screens.RenderWorkspace(m.browser, m.editorScreen, m.editor,
-				m.focus, m.structure, layout, m.sidebarCursor, m.colScroll, innerW, contentHeight)
+			content = screens.RenderWorkspaceScrolled(m.browser, m.editorScreen, m.editor,
+				m.focus, m.structure, m.structureScroll, layout, m.sidebarCursor, m.colScroll, innerW, contentHeight)
 		}
 	}
 
@@ -165,6 +165,9 @@ func (m *Model) renderFooter() string {
 			case screens.FocusMain:
 				if m.structure {
 					left = footerBindings([]binding{
+						{"↑↓", "scroll"},
+						{"pgup/pgdn", "page"},
+						{"g/G", "ends"},
 						{"esc", "back"},
 						{"tab", "next"},
 					})
@@ -209,10 +212,8 @@ func (m *Model) renderFooter() string {
 		right = m.spinner.View() + " running query…"
 	case m.connecting:
 		right = m.spinner.View() + " connecting…"
-	case m.navigating:
-		right = m.spinner.View() + " loading…"
 	}
-	if right == "" && m.screen == ScreenWorkspace && m.focus != screens.FocusEditor &&
+	if right == "" && m.screen == ScreenWorkspace && !m.structure && m.focus != screens.FocusEditor &&
 		m.browser != nil && m.browser.ActiveTable != "" && m.browser.TotalRows > 0 {
 		first := m.browser.Page*m.browser.PageSize + 1
 		last := (m.browser.Page + 1) * m.browser.PageSize
