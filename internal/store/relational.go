@@ -110,6 +110,16 @@ func (a *RelationalAdapter) Version(ctx context.Context) (string, error) {
 	return a.store.Version()
 }
 
+// ReadCell delegates complete-value reads only to relational stores that can
+// provide a consistent server-side reader.
+func (a *RelationalAdapter) ReadCell(ctx context.Context, req CellReadRequest) (*CellRead, error) {
+	reader, ok := a.store.(CellReader)
+	if !ok {
+		return nil, fmt.Errorf("this relational driver does not support bounded cell reads")
+	}
+	return reader.ReadCell(ctx, req)
+}
+
 func (a *RelationalAdapter) Close() error {
 	return a.store.Close()
 }

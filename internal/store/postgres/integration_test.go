@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"io"
 	"os"
 	"testing"
 
@@ -145,6 +146,22 @@ func TestIntegration(t *testing.T) {
 		len(defaultData.Rows[0][5]) != 18 || defaultData.Incomplete[binaryPosition].State != store.CellPreview ||
 		defaultData.RowRef(0) == nil || defaultData.RowRef(0).KeyParts()[0].Value.Value != int64(1) {
 		t.Fatalf("default Browse projection = %+v hasNext=%v, want bounded text/JSON/blob previews and hidden identity", defaultPage.Data, defaultPage.HasNext)
+	}
+	textCell, err := s.ReadCell(context.Background(), store.CellReadRequest{Row: defaultData.RowRef(0), Column: "payload", BlockBytes: 64 << 10})
+	if err != nil {
+		t.Fatalf("ReadCell text: %v", err)
+	}
+	text, err := io.ReadAll(textCell.Reader)
+	if err != nil || len(text) != 1<<20+3 || string(text[:3]) != "界" {
+		t.Fatalf("fragmented text read: bytes=%d prefix=%q err=%v", len(text), text[:min(len(text), 3)], err)
+	}
+	binaryCell, err := s.ReadCell(context.Background(), store.CellReadRequest{Row: defaultData.RowRef(0), Column: "binary_payload", BlockBytes: 64 << 10})
+	if err != nil {
+		t.Fatalf("ReadCell binary: %v", err)
+	}
+	binaryValue, err := io.ReadAll(binaryCell.Reader)
+	if err != nil || !binaryCell.Binary || len(binaryValue) != 1<<20 || binaryValue[0] != 0xff {
+		t.Fatalf("fragmented binary read: bytes=%d binary=%v err=%v", len(binaryValue), binaryCell.Binary, err)
 	}
 
 	// keyset pagination over the primary key
