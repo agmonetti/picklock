@@ -333,7 +333,7 @@ flag (merged as `cfg.ReadOnly = cfg.ReadOnly || globalReadOnly` before opening).
 - Browse page size is the default for new table openings/connections; active
   selection changes use `Browser.SetOptions`, resetting cursor history.
 - `preview_bytes` is enforced by relational Browse projections; full-value
-  blocks remain E5 and editor byte retention remains E6. Filters/options/data
+  blocks are implemented in E5 and editor byte retention in E6. Filters/options/data
   are never persisted in `Prefs`.
 - `sidebar_width` / `editor_height` persist the workspace pane sizes changed
   with a right-click drag; `0` means automatic. The values are clamped again
@@ -403,9 +403,9 @@ ERROR: PERMISSION DENIED
   like editor queries: it is bounded by the configured query timeout, cancellable
   with `Esc`, and shows a spinner instead of freezing the UI.
 - Editor executors receive `store.QueryLimits`; `editor_max_rows` configures
-  the existing row cap (default 10000), while cell/result byte enforcement
-  remains E6. Marked partial/cutoff results are visible and cannot be copied
-  or exported as complete. Legacy row cutoffs do not invent retained-byte counts.
+  the existing row cap (default 10000), and cell/result bytes are enforced in E6.
+  Marked partial/cutoff results are visible and cannot be copied or exported as
+  complete. Legacy row cutoffs do not invent retained-byte counts.
 - Column widths are recomputed during rendering from at most 100 supplied rows.
   Each measurement stops at 36 terminal cells; once a column reaches that cap,
   later sampled cells in that column are skipped. There is no width cache.

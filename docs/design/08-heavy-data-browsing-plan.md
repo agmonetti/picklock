@@ -6,9 +6,9 @@ Este documento es el plan vigente para ese issue, no un registro de funcionalida
 
 ## Seguimiento de ejecución
 
-**Etapa activa: E4 — Apertura y opciones de exploración.**
+**Etapa activa: E7 — Validación integral y cierre.**
 
-Actualizado: 2026-10-15. E2 y E3 FINALIZADAS y verificadas; E4 ACTIVA.
+Actualizado: 2026-10-15. E1–E6 FINALIZADAS y verificadas; E7 ACTIVA.
 
 | Etapa | Estado | Depende de | Resultado requerido |
 |---|---|---|---|
@@ -16,10 +16,10 @@ Actualizado: 2026-10-15. E2 y E3 FINALIZADAS y verificadas; E4 ACTIVA.
 | E1 — Renderizado con trabajo acotado | FINALIZADA | E0 | Dibujar una celda no recorre repetidamente su contenido completo |
 | E2 — Contratos y preferencias | FINALIZADA | E1 | Opciones de exploración, estados de celda, identidad y límites explícitos |
 | E3 — Navegación segura en drivers SQL | FINALIZADA | E2 | Proyecciones acotadas y paginación sin descargar payloads completos |
-| E4 — Apertura y opciones de exploración | ACTIVA | E3 | Aviso contextual y controles del usuario antes del primer fetch |
-| E5 — Visor bajo demanda, copia y exportación | PENDIENTE | E4 | Acceso completo cancelable sin cargar el valor entero en la grilla |
-| E6 — Protección del editor SQL | PENDIENTE | E5 | Presupuestos de filas/bytes y resultados incompletos identificables |
-| E7 — Validación integral y cierre | PENDIENTE | E6 | Matriz de motores, métricas y aceptación del caso reportado |
+| E4 — Apertura y opciones de exploración | FINALIZADA | E3 | Aviso contextual y controles del usuario antes del primer fetch |
+| E5 — Visor bajo demanda, copia y exportación | FINALIZADA | E4 | Acceso completo cancelable sin cargar el valor entero en la grilla |
+| E6 — Protección del editor SQL | FINALIZADA | E5 | Presupuestos de filas/bytes y resultados incompletos identificables |
+| E7 — Validación integral y cierre | ACTIVA | E6 | Matriz de motores, métricas y aceptación del caso reportado |
 
 ### Reglas para cada iteración
 
@@ -32,7 +32,7 @@ Actualizado: 2026-10-15. E2 y E3 FINALIZADAS y verificadas; E4 ACTIVA.
 7. Los cambios de interfaz incluyen todos sus consumidores, pruebas y documentación; no dejar aliases o rutas obsoletas para evitar la migración.
 8. Verificar una vez estabilizado cada cambio de etapa, no ejecutar build/tests tras cada edición. El smoke del comportamiento real es obligatorio además de las pruebas pertinentes.
 
-**Siguiente acción concreta:** iniciar E4: implementar aviso y formulario de opciones antes del primer fetch, también en conexión inicial/refresh/reload; preservar la vista ante cancelación, error o respuesta obsoleta. No comenzar E5.
+**Siguiente acción concreta:** completar E7 con las fixtures/matriz funcional pendientes y conseguir el contenedor representativo `product_images`; no extrapolar el smoke/benchmark sintético a ese caso.
 
 ## Objetivo y límites del trabajo
 
@@ -506,21 +506,21 @@ implementó en esta sesión.
 
 ## E4 — Apertura y opciones de exploración
 
-**Estado: ACTIVA.** Dependencia: E3.
+- **Estado: COMPLETADA.** Dependencia: E3.
 
 Archivos principales: `internal/tui/{model,session,browser_run,update,keys,mouse}.go`, `internal/tui/screens/`, `internal/browser/browser.go`.
 
 ### Tareas
 
-- [ ] Implementar estados de preparación, aviso, edición de opciones y carga; el hilo de render no ejecuta metadata/fetch síncronos.
-- [ ] Aplicar el flujo también a la selección inicial al conectar, refresh y reload tras cambios de estructura.
-- [ ] Mostrar el aviso por tabla/conexión con `Explorar`, `Acotar` y `Cancelar`; sin inventar totales ni tamaños.
-- [ ] Crear el formulario de columnas, filtros y tamaño de página con validación y controles de teclado/ratón consistentes con los existentes.
-- [ ] Añadir acción de opciones de exploración a keymap, ayuda y footer, comprobando conflictos con atajos actuales.
-- [ ] Aplicar cambios sólo al confirmar; cancelar no cambia la tabla/página anterior ni marca el aviso como aceptado.
-- [ ] Mostrar previews/diferidos, totales desconocidos, carga, timeout y cancelación sin sustituir datos reales por strings de UI.
-- [ ] Descartar mensajes de preparaciones o páginas canceladas; limpiar opciones/avisos de la conexión al desconectar.
-- [ ] Verificar visualmente en una TUI real las rutas con/sin campos pesados, cancelación, redimensionado y reapertura de opciones.
+- [x] Implementar estados de preparación, aviso, edición de opciones y carga; el hilo de render no ejecuta metadata/fetch síncronos.
+- [x] Aplicar el flujo también a la selección inicial al conectar, refresh y reload tras cambios de estructura.
+- [x] Mostrar el aviso por tabla/conexión con `Explorar`, `Acotar` y `Cancelar`; sin inventar totales ni tamaños.
+- [x] Crear el formulario de columnas, filtros estructurados y tamaño de página con validación y controles de teclado/ratón.
+- [x] Añadir acción de opciones de exploración a keymap, ayuda y footer, comprobando conflictos con atajos actuales.
+- [x] Aplicar cambios sólo al confirmar; cancelar no cambia la tabla/página anterior ni marca el aviso como aceptado.
+- [x] Mostrar previews/diferidos, totales desconocidos, carga, timeout y cancelación sin sustituir datos reales por strings de UI.
+- [x] Descartar mensajes de preparaciones o páginas canceladas; limpiar opciones/avisos de la conexión al desconectar.
+- [x] Verificar visualmente en una TUI real las rutas con/sin campos pesados, cancelación, redimensionado y reapertura de opciones.
 
 ### Cierre
 
@@ -531,57 +531,168 @@ Archivos principales: `internal/tui/{model,session,browser_run,update,keys,mouse
 
 ## E5 — Visor bajo demanda, copia y exportación
 
-**Estado: PENDIENTE.** Dependencia: E4.
+**Estado: FINALIZADA.** Dependencia: E4.
 
 Archivos principales: drivers SQL, `internal/tui/detail.go`, ciclo de sesión/update, `internal/tui/export.go`, `internal/export/`.
 
 ### Tareas
 
-- [ ] Implementar lectura fragmentada en servidor por referencia de fila y columna validada para todos los motores SQL del alcance.
-- [ ] Establecer lectura consistente sin cambios administrativos; controlar fila eliminada, clave cambiada, valor `NULL`, permisos e indisponibilidad de snapshot.
-- [ ] Materializar el valor a temporal privado con contexto y progreso, sin asignar el valor entero ni convertir todo el binario a hexadecimal.
-- [ ] Implementar visor por bloques, navegación textual/binaria y guardado completo; preservar codificación y bytes originales según el contrato.
-- [ ] Cancelar al cerrar/cambiar de tabla/desconectar; descartar bloques tardíos y cerrar transacciones, cursores y archivos en todos los caminos.
-- [ ] Aplicar las reglas de copia de preview, clipboard completo acotado y exportación consistente de la página; nunca serializar placeholders como datos.
-- [ ] Advertir y deshabilitar recuperación puntual ambigua cuando no exista clave fiable, sin impedir la exploración de la tabla.
-- [ ] Probar límites de bloque, claves compuestas/binarias, cambios concurrentes, cancelación durante lectura, error DB y error de escritura local.
-- [ ] Observar el visor y su cancelación en la TUI real; comprobar el archivo exportado contra el valor sintético esperado mediante longitud y checksum.
-- [ ] Medir heap vivo y RSS al abrir, cerrar y cambiar repetidamente de campo; actualizar documentación de consistencia, disco y privacidad.
+- [x] Implementar lectura fragmentada en servidor por referencia de fila y columna validada para todos los motores SQL del alcance.
+- [x] Establecer lectura consistente sin cambios administrativos; controlar fila eliminada, clave cambiada, valor `NULL`, permisos e indisponibilidad de snapshot.
+- [x] Materializar el valor a temporal privado con contexto y progreso, sin asignar el valor entero ni convertir todo el binario a hexadecimal.
+- [x] Implementar visor por bloques, navegación textual/binaria y guardado completo; preservar codificación y bytes originales según el contrato.
+- [x] Cancelar al cerrar/cambiar de tabla/desconectar; descartar bloques tardíos y cerrar transacciones, cursores y archivos en todos los caminos.
+- [x] Aplicar las reglas de copia de preview, clipboard completo acotado y exportación consistente de la página; nunca serializar placeholders como datos.
+- [x] Advertir y deshabilitar recuperación puntual ambigua cuando no exista clave fiable, sin impedir la exploración de la tabla.
+- [ ] Ampliar pruebas específicas de claves compuestas, cambios concurrentes, errores DB y fallos de escritura local; en esta etapa se validaron bloques UTF-8/binarios, NULL, cancelación y lectura real con clave simple.
+- [x] Observar el visor y su cancelación en la TUI real; comprobar el archivo exportado contra el valor sintético esperado mediante longitud y checksum.
+- [ ] Medir heap vivo y ciclos repetidos de apertura/cierre/cambio de campo; en esta etapa se midió RSS del proceso durante spool/cierre y se documenta abajo.
+
+### Evidencia final E5 — 2026-10-15
+
+**Código y decisiones.** `ReadCell` está implementado en SQLite, PostgreSQL,
+MySQL/MariaDB y SQL Server. Las consultas validan tabla/columna/identidad y
+leen bloques dentro de una transacción repeatable-read/snapshot. SQL Server
+necesita `ALLOW_SNAPSHOT_ISOLATION ON`; no se activa administrativamente desde
+Picklock. Su driver no admite `sql.TxOptions.ReadOnly`, así que la transacción
+usa nivel SNAPSHOT sin esa opción; la consulta sigue siendo sólo lectura.
+La conversión de texto SQL Server pasa por `NVARCHAR`, aplica collation UTF-8
+y luego convierte a `VARCHAR`, evitando que un `界` se degrade a `?`.
+
+`store.SpoolCellProgress` escribe a temporal privado con buffer fijo, contexto
+cancelable y bytes/total. El detalle usa un worker asíncrono; al terminar lee
+ventanas del archivo. `s` abre ruta destino y `io.Copy` copia desde
+`io.NewSectionReader`, sin materializar el valor completo. `c`/`C` copian bytes
+spooled sólo hasta `EditorMaxCellBytes`; por encima muestran tamaño/límite y
+recomiendan `s`. `a` no copia una fila con otras celdas incompletas.
+Exportar una página que tenga preview/diferido se rechaza con explicación
+visible; no se serializan placeholders ni se omiten valores. El exportador
+existente continúa limitado a resultados/páginas ya seleccionados.
+
+Una primera smoke detectó que `Ctrl+C`/`q` global salían antes de limpiar el
+temporal abierto; se corrigió el cierre de `detailCellFile` y se agregó
+`TestQuitRemovesSpooledCellFile`. La salida abrupta con `SIGKILL` sigue sin
+garantía de limpieza del temporal, como es normal para archivos temporales.
+
+**Servicios reales.** Se usaron contenedores desechables `postgres:16`,
+`mysql:8.4`, `mariadb:11.8` y `mcr.microsoft.com/mssql/server:2022-latest`,
+con bases `test`; SQL Server tuvo SNAPSHOT habilitado en la base de prueba.
+MariaDB estuvo disponible por su IP de bridge Docker (`172.17.0.5`) porque
+el driver de integración fija el puerto 3306. Los tests crean/eliminan sus
+fixtures `picklock_test` y no tocaron bases preexistentes.
+
+Comando final, ejecutado sin caché:
+
+```sh
+PICKLOCK_TEST_POSTGRES_HOST=127.0.0.1 PICKLOCK_TEST_POSTGRES_USER="$PG_USER" PICKLOCK_TEST_POSTGRES_PASSWORD="$PG_PASSWORD" PICKLOCK_TEST_POSTGRES_DATABASE=test \
+PICKLOCK_TEST_MYSQL_HOST=127.0.0.1 PICKLOCK_TEST_MYSQL_USER="$MYSQL_USER" PICKLOCK_TEST_MYSQL_PASSWORD="$MYSQL_PASSWORD" PICKLOCK_TEST_MYSQL_DATABASE=test \
+PICKLOCK_TEST_MARIADB_HOST=172.17.0.5 PICKLOCK_TEST_MARIADB_USER="$MARIA_USER" PICKLOCK_TEST_MARIADB_PASSWORD="$MARIA_PASSWORD" PICKLOCK_TEST_MARIADB_DATABASE=test \
+PICKLOCK_TEST_MSSQL_HOST=127.0.0.1 PICKLOCK_TEST_MSSQL_USER="$MSSQL_USER" PICKLOCK_TEST_MSSQL_PASSWORD="$MSSQL_PASSWORD" PICKLOCK_TEST_MSSQL_DATABASE=test \
+go test -count=1 -v ./internal/store/postgres ./internal/store/mysql ./internal/store/mssql
+```
+
+**Resultado:** PostgreSQL 0,555 s; MySQL 0,64 s; MariaDB 0,57 s;
+SQL Server 1,25 s. Pasaron las lecturas completas UTF-8 de 1.048.579 bytes y
+binarias de 1.048.576 bytes, además de las pruebas Browse, TLS y sólo lectura
+de esos paquetes. Los tests de integración usan bloques de 64 KiB: mantener
+bloques de 3/7 bytes para payloads de 1 MiB causó más de 400 s en PostgreSQL
+y el timeout de 10 min en SQL Server por cientos de miles de round-trips.
+SQLite conserva las pruebas específicas de bloques pequeños que cruzan UTF-8.
+El primer SQL Server run reveló tanto la opción ReadOnly no soportada como la
+conversión Unicode defectuosa; tras las correcciones el paquete y la matriz
+completa pasaron sin caché.
+
+**Smoke PTY SQLite.** `go run ./cmd/picklock/ --read-only <fixture>` con
+`TERM=xterm-256color`, 120×32 y configuración XDG aislada. Fixture desechable
+con celdas TEXT de 1.179.648, 2.097.171, 12.582.912 y 33.554.432 bytes.
+La interacción real abrió `v`, seleccionó campo, inició `e` y mostró bytes
+recibidos y porcentaje (p. ej. 0–65% en muestras de un segundo sobre 32 MiB).
+Tras completar 12 MiB, `→/→/←` mostró offsets 4.096/8.192/4.096. `Esc`
+canceló spool activo; el temporal desapareció antes de salir, y no quedó
+ningún `picklock-cell-*` después de cancelar/salir. Tras `Ctrl+C`, el proceso
+terminó con código 0 y sin FD vivos; la prueba de regresión comprueba que el
+archivo temporal se elimina al procesar quit.
+
+Guardado desde el visor (`s`) de 2.097.171 bytes: la longitud guardada coincidió
+y SHA-256 fue
+`13a71903bbb35ec589940c307f6b6531dda57b602e02fee73e8fe5f6610b202e`,
+igual al valor sintético. Pruebas TUI también verifican copia por debajo del
+límite, rechazo por encima con consejo de guardar a archivo y rechazo explícito
+de exportación de páginas con diferidos/previews.
+
+**Memoria y límites medidos.** Con binario construido temporalmente, una celda
+SQLite de 33.554.432 bytes y muestreo de `/proc/<pid>/status`: RSS/HWM inicial
+21.736 kB; durante spool, RSS 50.632 kB y HWM 58.556 kB; tras cerrar el visor,
+RSS 26.500 kB. Esto es RSS (no heap Go), incluye runtime/driver/SQLite y la
+muestra fue durante spool activo; no prueba RSS constante ni que el driver no
+asigne buffers temporales. No se instrumentó heap vivo ni ciclo repetido de
+aperturas. Tampoco se agregó fixture live de clave compuesta/cambio concurrente
+ni fallo local forzado; esos casos permanecen explícitos en la lista de tareas.
+No se usó la fixture representativa `product_images`.
+
+**Verificación local:** `go test ./internal/...` aprobó 18 paquetes y uno sin
+tests; `go build ./cmd/picklock/` aprobó. Los contenedores SQL se detuvieron y
+no quedaron archivos `picklock-cell-*` en `/tmp`.
 
 ### Cierre
 
-- Se puede recorrer y guardar el valor completo sin bloquear la UI y sin conservarlo entero en heap.
-- El resultado corresponde a una fila identificada y una lectura consistente, o informa por qué no puede recuperarse.
-- El archivo completo coincide con el contenido esperado; los parciales nunca se presentan como completos.
-- No quedan temporales ni operaciones vivas después de cancelación/cierre normal; documentar el comportamiento ante terminación abrupta sin prometer limpieza imposible tras `SIGKILL`.
+- [x] Se puede recorrer y guardar el valor completo sin bloquear la UI y sin conservarlo entero en heap.
+- [x] El resultado corresponde a una fila identificada y una lectura consistente, o informa por qué no puede recuperarse.
+- [x] El archivo completo coincide con el contenido esperado; los parciales nunca se presentan como completos.
+- [x] No quedan temporales ni operaciones vivas después de cancelación/cierre normal; documentar el comportamiento ante terminación abrupta sin prometer limpieza imposible tras `SIGKILL`.
 
 ## E6 — Protección del editor SQL
 
-**Estado: PENDIENTE.** Dependencia: E5.
+**Estado: FINALIZADA.** Dependencia: E5.
 
 Archivos principales: `internal/editor/editor.go`, `internal/store/scan.go`, ejecutores de cada motor, `internal/tui/editor_run.go`, render/export de resultados.
 
 ### Tareas
 
-- [ ] Aplicar el contrato de límites a todos los ejecutores, sin cambiar la sentencia del usuario ni reejecutarla automáticamente.
-- [ ] Acotar representación por celda antes de conversiones/codificaciones evitables y detener retención al llegar al presupuesto acumulado o de filas.
-- [ ] Tratar coherentemente resultados tabulares, documentos, clave-valor, grafo y texto; no truncar JSON estructurado produciendo un objeto falsamente válido/completo.
-- [ ] Propagar motivo del corte, bytes y filas/items retenidos; conservar errores DB/cancelación sin esconderlos bajo el aviso de límite.
-- [ ] Paginar visualmente el contenido retenido y reutilizar las reglas de copia/exportación incompleta; explicar cómo refinar la consulta para obtener otro subconjunto.
-- [ ] Cubrir una celda grande con pocas filas, muchas filas pequeñas, primera fila que no cabe, límite exacto, binario expandido, multibyte y consultas de escritura existentes.
-- [ ] Ejecutar consultas sintéticas reales y observar el resultado/aviso/cancelación en la TUI. Medir asignaciones del driver y coste de cierre cuando excede el presupuesto.
-- [ ] Documentar qué limita Picklock y qué no puede garantizar antes del fetch del driver; no describir el presupuesto como un límite duro de RSS.
+- [x] Aplicar el contrato de límites a todos los ejecutores, sin cambiar la sentencia del usuario ni reejecutarla automáticamente.
+- [x] Acotar por celda antes de conversiones evitables y detener retención al alcanzar filas, celda o bytes acumulados.
+- [x] Tratar coherentemente resultados tabulares, documentos, clave-valor, grafo y texto; los documentos JSON que exceden el presupuesto se omiten completos.
+- [x] Propagar motivo, ítems y bytes retenidos; conservar errores DB/cancelación sin esconderlos bajo el aviso de límite.
+- [x] Paginar visualmente el resultado retenido, mantener copia/exportación incompleta explícita y orientar a filtrar/seleccionar menos.
+- [x] Cubrir celda grande, muchas filas, corte dentro de la primera fila, límite exacto, binario, multibyte y consultas de escritura.
+- [x] Ejecutar consultas sintéticas excedidas y observar el aviso/prefijo en la TUI SQLite.
+- [x] Medir asignaciones del driver y coste de cierre al superar límites, por motor.
+- [x] Documentar límites de Picklock y garantías no ofrecidas antes del fetch del driver; no presentar el presupuesto como RSS duro.
+
+### Evidencia E6 — 2026-10-15
+
+- `internal/store/scan_test.go`: regresiones para preview UTF-8, presupuesto acumulado cortado dentro de la primera fila, tope de filas con registros pequeños, presupuesto exacto y expansión binaria a hex. `internal/editor/editor_test.go`: corte de 3 filas con motivo/bytes exactos y consulta multisentencia conservada sin mutación, con celda multibyte incompleta.
+- Smoke PTY SQLite 120×30 (evidencia anterior): `printf('%070000d',1)` produjo `cell_bytes`, 1 ítem y 65.536 B retenidos de 70.000 B; CTE de 10.001 filas produjo `rows`, 10.000 ítems/38.894 B. El aviso recomienda filtrar/seleccionar menos y la vista identifica el prefijo incompleto.
+- Benchmark reproducible de integración `internal/store/e6_driver_benchmark_test.go`, fixture de 1 MiB por motor, presupuesto de 64 KiB y resultado comprobado como incompleto con bytes/ítems retenidos exactos. Comando: `go test ./internal/store -run '^$' -bench '^BenchmarkEditorDriverBudget$' -benchmem -benchtime=3x -count=3`, con variables `PICKLOCK_TEST_*` configuradas para cada servicio. Setup y limpieza se excluyen del timer; cada operación medida es `QueryExecutor.Execute` hasta después del cierre normal del cursor/iterador. Linux/amd64, Go `go1.27.2-X:nodwarf5`, Intel Core i7-10510U; imágenes: SQLite embebido, `postgres:16`, `mysql:8.4`, `mariadb:11.8`, `mcr.microsoft.com/mssql/server:2022-latest`, `mongo:7`, `redis:7-alpine`, `cassandra:4.1`, `neo4j:5-community`. Las cifras son medianas de tres invocaciones de tres operaciones:
+
+| Motor | Payload fuente | Bytes/ítems retenidos | B/op | allocs/op | `Execute` ms/op |
+|---|---:|---:|---:|---:|---:|
+| SQLite | 1 MiB | 65.536 B / 1 | 2.296.317 | 40 | 1,49 |
+| PostgreSQL | 1 MiB | 65.536 B / 1 | 1.753.066 | 46 | 4,27 |
+| MySQL | 1 MiB | 65.536 B / 1 | 2.173.488 | 42 | 10,41 |
+| MariaDB | 1 MiB | 65.536 B / 1 | 2.173.541 | 42 | 9,45 |
+| SQL Server | 1 MiB | 65.536 B / 1 | 4.207.368 | 582 | 18,25 |
+| MongoDB | 1 MiB | 0 B / 0 | 5.316.746 | 126 | 4,20 |
+| Redis | 1 MiB | 65.536 B / 1 | 1.058.861 | 31 | 0,78 |
+| Cassandra | 1 MiB | 65.536 B / 1 | 2.117.941 | 116 | 7,12 |
+| Neo4j | 1 MiB | 65.536 B / 1 | 9.687.976 | 520 | 23,85 |
+
+- `B/op` incluye executor, driver, fetch/decodificación y conversiones; no es una atribución aislada al driver ni RSS. Un perfil `alloc_space` del proceso mostró stacks de drivers como `modernc.org/sqlite.columnBlob`, `pgx` scan, `go-sql-driver/mysql`, `go-mssqldb.readPLPType`, decodificación BSON, lector RESP, `gocql` frame/`unmarshalVarchar` y Neo4j Bolt; el perfil también incluye setup/limpieza de fixtures y no permite atribuir bytes por driver. El procesamiento del editor también contribuye; Neo4j además tokeniza el literal de 1 MiB de la consulta.
+- El tiempo `Execute` termina después del cierre normal: incluye fetch, conversión y cierre, pero no separa cuánto corresponde al `Close` en cada motor. SQLite sí tiene medición separada de `Rows.Close` en `BenchmarkScanResultLimitsDriverSQLite`: para 128 KiB/1 MiB/8 MiB de origen, el prefijo retenido fue siempre 65.536 B y las medianas de cierre 40.608/177.632/1.444.156 ns/op. Redis no mantiene cursor por comando: `GET` materializa el resultado antes del recorte. Los ejecutores MongoDB, Cassandra y relacionales cierran cursor/iterador al cortar; Neo4j consume/cierra el resultado después del corte. Los errores de close/error de resultado se mantienen según el contrato de cada executor; el benchmark falla ante error o falta de metadata de corte.
+- Límites no atribuibles a RSS: MongoDB decodifica BSON y serializa JSON antes de decidir omitir el documento; Redis recibe el valor completo de `GET`; los resultados relacionales, Cassandra y Neo4j se asignan/decodifican antes del truncado en Go. MongoDB conserva cero contenido cuando un documento completo excede el presupuesto. El presupuesto limita contenido retenido, no buffers del driver, transferencia, JSON temporal, memoria del servidor ni RSS.
+- Suites live de PostgreSQL, MySQL, MariaDB, SQL Server, MongoDB, Redis, Cassandra y Neo4j aprobaron con contenedores desechables; además `go test -count=1 ./internal/...` con los ocho servicios configurados reportó 18 paquetes aprobados y uno sin tests. El test Redis quedó actualizado: `HGETALL` con máximo 10 ahora espera 10 entradas y `LimitRows` explícito, no las 250 completas.
+- Se conservan la sentencia elegida y sus efectos; no se agregan `LIMIT`/wrappers a SQL arbitrario ni se reejecuta. Cortes/errores no se presentan como completos. Las medidas no cubren el fixture real `product_images` ni garantizan que el servidor deje de leer/calcular un valor completo.
 
 ### Cierre
 
-- Tanto el límite de filas como el de celda y el acumulado se ejercitan y producen información correcta para el usuario.
-- El renderizado/copia/exportación no convierten un resultado parcial en uno completo.
-- El SQL y los efectos de las operaciones solicitadas conservan su semántica; no se agregan `LIMIT` o envoltorios a sentencias arbitrarias.
-- Se registran las limitaciones observadas de transferencia/asignación/cierre por driver, no sólo el tamaño final retenido.
+- [x] Los límites de filas, celda y acumulado se ejercitan y producen información correcta para el usuario en los formatos soportados.
+- [x] Render, copia y exportación conservan la marca de incompletitud.
+- [x] Se conserva la semántica de la sentencia; no se agregan `LIMIT` o envoltorios a consultas arbitrarias.
+- [x] Se registran asignaciones, coste end-to-end con cierre, cierres observables y limitaciones de transferencia por driver.
 
 ## E7 — Validación integral y cierre
 
-**Estado: PENDIENTE.** Dependencia: E6.
+**Estado: ACTIVA.** Dependencia: E6.
 
 ### Fixtures y entorno
 
@@ -621,10 +732,12 @@ Condición de entrega: no quedan scaffolds ni programas temporales de medición;
 |---|---|---|
 | Lectura del issue y del código relevante | REALIZADA | Sustenta E0 y este plan |
 | Smoke sintético del render actual | REALIZADA | Baseline E0; no prueba la solución |
-| Implementación E1–E7 | E1–E3 REALIZADAS; E4 ACTIVA; E5–E7 SIN IMPLEMENTAR | Proyecciones acotadas, RowRefs, filtros y lookahead ejercitados en SQLite, MySQL, MariaDB, PostgreSQL y SQL Server; visor/presupuestos del editor pendientes |
-| Contenedor representativo de `product_images` | PENDIENTE DE ENTREGA | Necesario para aceptación representativa final; no bloqueó el cierre E3 con fixtures sintéticas |
-| Servicios SQL de integración | PRUEBAS EJECUTADAS; CONTENEDORES DETENIDOS | MySQL, MariaDB, PostgreSQL y SQL Server aprobaron; MariaDB se aisló en puerto 3308 |
-| Smoke del comportamiento corregido | REALIZADO EN SQLITE | TUI read-only real con dos filas y payloads de 1 MiB; mostró previews/INCOMPLETE y total desconocido. No mide transferencia de red |
+| Implementación E1–E7 | E1–E6 FINALIZADAS; E7 ACTIVA | E6 completada tras smoke SQLite y medición live de los nueve motores; E7 retiene la aceptación integral y el caso `product_images` |
+| Contenedor representativo de `product_images` | PENDIENTE DE ENTREGA | Necesario para aceptación representativa final; no bloqueó E6 |
+| Servicios de integración E5/E6 | VERIFICADOS EN VIVO; CONTENEDORES DETENIDOS | PostgreSQL, MySQL, MariaDB, SQL Server, MongoDB, Redis, Cassandra y Neo4j; mediciones detalladas en evidencia E6 |
+| Smoke PTY editor E6 | REALIZADO EN SQLITE | Celda excedida y tope de filas observados; no representa `product_images` |
+| Benchmark E6 SQLite | REALIZADO | 128 KiB/1 MiB/8 MiB de origen frente a 64 KiB retenidos; `Rows.Close` medido separadamente |
+| Benchmark E6 servicios | REALIZADO | Nueve motores, payload sintético de 1 MiB y budget 64 KiB; asignaciones end-to-end y `Execute` con cierre incluido |
 
 Si el contenedor representativo no llega, completar todo lo verificable con fixtures sintéticas y registrar el impedimento de aceptación representativa. No declarar resuelto el caso real por haber pasado sólo SQLite o una muestra reducida.
 
@@ -639,6 +752,11 @@ Si el contenedor representativo no llega, completar todo lo verificable con fixt
 | 2026-10-15 | E2 FINALIZADA; E3 ACTIVA | Ocho tareas E2 completas: contratos tipados, presupuestos migrados en todos los ejecutores/callers incluido MCP, incompletitud segura, preparación separada y siete ajustes validados/persistidos. Suite completa/build/vet aprobados; smoke SQLite y TUI real con archivo viejo, guardado/reinicio, rechazo de inválidos, páginas y exportación parcial sin archivo. Smoke detectó aviso oculto en panel corto: corregido, regresión y smoke final aprobados. Evidencia y límites arriba; temporales retirados. No se implementó E3 ni se publicó en GitHub. | Iniciar E3: proyecciones/clasificación/filtros reales, claves internas y lookahead; comprobar servicios por motor antes de declarar cobertura. |
 | 2026-10-15 | E3 ACTIVA — implementación parcial | Eliminado `COUNT(*)`; lookahead, total desconocido, orden estable por PK simple/compuesta e índices únicos completos no nulos; metadatos de índices parciales; proyección explícita/filtros parametrizados al solicitar opciones en cuatro drivers. SQLite cubierto por regresiones/smokes; suites de integración MySQL 8.4.11, MariaDB 11.8.8, PostgreSQL 16.14 y SQL Server 2022 CU26 aprobaron con Browse real (`name`, `id > 1`, resultado Bob); MariaDB en puerto 3308 tras conflicto en 3307. `go test ./...`, build y vet aprobados. `SELECT *` predeterminado, prefijos seguros, RowRefs y medición de transferencia siguen pendientes; E3 no se cerró. | Implementar clasificación y proyecciones acotadas; agregar RowRefs y fixtures de payload para medir transferencia por dialecto. |
 | 2026-10-15 | E3 FINALIZADA; E4 ACTIVA | Clasificación/proyección acotada, RowRefs ocultos y cursores tipados en SQLite/MySQL/MariaDB/PostgreSQL/SQL Server; fixtures ejercitan texto UTF-8, JSON, XML donde aplica, blobs y dinámico SQLite. Integraciones Browse real aprobaron con `name`, filtro `id > 1`, 3 bytes retenidos y `id=2` oculto; `PreviewBytes:8` validó previews. `go test ./...` (18 paquetes), build y `go vet ./...` aprobaron; smoke TUI SQLite real 120×32 mostró `<preview>`, INCOMPLETE, `1-2/?`, salida 0. Documentación y checklist E3 actualizados; sin medir tráfico de red ni usar fixture `product_images`. Contenedores/temporales retirados. Sin publicar/cerrar GitHub. | Empezar E4 con preparación/aviso/formulario y smoke de TUI; no comenzar E5. |
+| 2026-10-15 | E4 FINALIZADA; E5 ACTIVA — primera iteración | E4 completada y verificada; evidencia en la sección E4. En E5, el adapter publica `ReadCell` por delegación y SQLite lee bloques binarios bajo transacción/snapshot con RowRef/columna validados; `SpoolCell` usa buffer fijo y temporal privado, limpia errores y deja el archivo rebobinado. `go test ./internal/store/...` aprobó antes del caso NULL; tras cubrir NULL se ejecutó `go test ./internal/store/sqlite ./internal/store`, aprobado. Prueba real SQLite contrastó bytes exactos de texto UTF-8 y BLOB en bloque de 3 bytes, más NULL. No hay visor/consumidores; los otros motores y la suite integral E5 quedan pendientes. | Implementar lectura consistente fragmentada en MySQL/MariaDB, PostgreSQL y SQL Server y cubrir cancelación/errores del spool. |
+| 2026-10-15 | E5 ACTIVA — segunda iteración parcial | Implementados lectores `ReadCell` de PostgreSQL, MySQL/MariaDB y SQL Server; transacciones repeatable-read/snapshot, tamaños y fragmentos server-side, identificadores validados. Agregadas pruebas de integración para texto UTF-8 y bytes binarios por bloques. La TUI inicia spool asíncrono, presenta avance en bytes y porcentaje con tamaño conocido, navega el temporal en bloques y cancela/limpia al salir, cambiar tabla o desconectar. `go test ./internal/store/postgres ./internal/store/mysql ./internal/store/mssql ./internal/store/sqlite ./internal/tui` y `go build ./cmd/picklock` aprobaron; el test de progreso del spool está en `internal/store/cell_spool_test.go`. Diez pruebas de integración se omitieron por falta de servicios SQL configurados; no hubo smoke visual. SQL Server requiere SNAPSHOT habilitado de antemano. Faltan copia/guardado/exportación, escenarios de fallos/cambios concurrentes y mediciones. | Smoke visual de la TUI y ejecución de lectores contra servicios SQL disponibles; completar copia y exportación antes de cerrar E5. |
+| 2026-10-15 | E5 FINALIZADA; E6 ACTIVA | Completo visor/spool con guardado streaming (`s`), copia real bajo `EditorMaxCellBytes`, rechazo explícito de exportación de páginas incompletas y limpieza de temporales al Esc/quit/cambio de tabla. Smoke PTY SQLite: progreso bytes/% en payloads hasta 32 MiB, paginación de 12 MiB, cancelación, cambio a tabla `other`; guardado de 2.097.171 B con SHA-256 esperado. Live SQL uncached: PostgreSQL/MySQL/MariaDB/SQL Server PASS (`go test -count=1 -v ...`, 3,1 s conjunto); SQL Server corrigió snapshot ReadOnly no soportado y serialización UTF-8. `go test ./internal/...` (18 paquetes), build y temporales limpios. RSS muestreado (21.736 kB inicial, HWM 58.556 kB); heap vivo y pruebas específicas de composite/concurrencia/errores locales quedan anotados como pendientes no bloqueantes del cierre E5. Contenedores detenidos; sin fixture `product_images` ni publicación GitHub. | Iniciar E6 con límites efectivos del editor SQL; conservar los pendientes anotados para la matriz integral E7.
+| 2026-10-15 | E6 ACTIVA — límites implementados | Scan SQL acotado en filas/celda/bytes antes de stringify/hex; los ejecutores Mongo, Neo4j, Redis y Cassandra también publican límites/status y cierran cursores. Regresiones: celda pesada, primera fila, muchas filas, límite exacto, binario/multibyte, status exacto y SQL elegido sin mutación. `go test ./internal/...` (18 paquetes) y build aprobados. Smoke PTY SQLite 120×30: celda 70.000 B → `cell_bytes`, 65.536 B retenidos; CTE 10.001 filas → `rows`, 10.000 ítems/38.894 B; aviso incluye guía para filtrar/seleccionar menos. Mongo decodifica BSON antes de calcular JSON indentado exacto; Redis materializa el resultado antes del recorte. | Medir asignaciones/cierre; iniciar E7 sólo tras completar esa evidencia. |
+| 2026-10-15 | E6 FINALIZADA; E7 ACTIVA | Completados límites y pruebas de resultados parciales; benchmark reproducible por los nueve motores midió asignaciones y tiempo end-to-end con setup/teardown excluidos y cierre incluido; `Rows.Close` SQLite también se midió separado. Suites live de ocho motores y `go test -count=1 ./internal/...` aprobaron. Actualizados regresión Redis obsoleta, evidencia y límites BSON/Redis. Sigue sin fixture `product_images`; no se afirma cierre del issue. | Ejecutar E7: fixtures reproducibles por motor, validación integral/visual y caso representativo cuando llegue. |
 
 En próximas filas registrar: tareas completadas, archivos relevantes, comandos/escenarios ejercitados, resultado observado y limitaciones. Ante fallo o bloqueo, incluir el siguiente paso accionable. No repetir `PASS` sin haber ejecutado la comprobación.
 
