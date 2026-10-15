@@ -87,12 +87,73 @@ go run ./cmd/demo
 - `↑↓` / `j k`: Navigate items/rows.
 - `Enter` in sidebar: Open selected table/collection/key/label and focus main panel.
 - `i`: Structure inspector (columns, collection stats, key metrics, clustering keys, graph schema).
-- `v`: Detail view (full un-truncated row, formatted JSON document, KV entries, graph node & incident edges).
+- `v`: Detail view (already-loaded row fields with wrapping, formatted JSON document, KV entries, graph node & incident edges).
 - `r`: Reload current item.
 - `Alt+E`: Export query result or browsed page to `.csv` or `.json`.
 - `Alt+C` / `Ctrl+Y`: Copy editor query to clipboard.
 - `Ctrl+R`: Execute query under cursor in editor (separate multiple queries with `;` in SQL/CQL/Cypher, or newlines in Redis).
 - `Esc`: Cancel running query or close detail/structure overlay.
+
+Relational table browsing does not run an exact row count for every page.
+The footer shows `/?` when the total is unknown; the next-page indicator comes
+from a lookahead row.
+
+### Large values: display limits
+
+Tabular browser and editor cells show a prefix of at most 36 terminal cells.
+The `…` marker fits inside that width; Unicode grapheme clusters (including
+combining marks and joined emoji) stay together. Use `Alt+←` / `Alt+→`
+(`Alt+H` / `Alt+L`) to reveal other columns, and `v` to inspect already-loaded
+values in the detail view.
+
+These are **rendering limits, not database fetch or memory limits**. Large values
+are still fetched and held in memory in full. The detail view wraps only through
+the displayed viewport, but field navigation and deep scrolling can still scan
+the loaded prefix/full field. Deferred loading, block-based viewing and editor
+byte budgets are not implemented yet; see the active stage in
+[the heavy-data browsing plan](docs/design/08-heavy-data-browsing-plan.md).
+
+### Settings and saved limits
+
+Open **Settings** with `Ctrl+P` from the connection screen or workspace. Use
+`Tab` / `Shift+Tab` or `↑` / `↓` to select a field, type a whole number, and
+press `Enter` to save all settings. `Esc` returns without applying changes.
+Validation or write errors keep the form open and leave the active preferences
+unchanged.
+
+| Setting / JSON key | Default | Applies now |
+|---|---:|---|
+| Query timeout / `query_timeout_seconds` | 60 seconds | Database operation timeout (maximum 86400 seconds) |
+| Browse page rows / `browse_page_size` | 50 rows | Default for newly opened tables/items; the active table keeps its current options |
+| Preview bytes / `preview_bytes` | 256 bytes | Saved contract only; bounded database previews arrive in E3 |
+| Value block bytes / `value_block_bytes` | 65536 bytes (64 KiB) | Saved contract only; block-based value viewing arrives in E5 |
+| Editor cell bytes / `editor_max_cell_bytes` | 65536 bytes (64 KiB) | Saved contract only; per-cell retention enforcement arrives in E6 |
+| Editor result bytes / `editor_max_result_bytes` | 16777216 bytes (16 MiB) | Saved contract only; accumulated retention enforcement arrives in E6 |
+| Editor max rows / `editor_max_rows` | 10000 rows | Maximum rows/items retained by editor query execution |
+
+All limits must be positive, fit the supported integer range, and leave room
+for required pagination arithmetic. Preview bytes cannot exceed value block
+bytes; editor cell bytes cannot exceed editor result bytes. There is no
+`0 = unlimited` option.
+
+Settings are stored in the private `picklock/prefs.json` file under the
+configuration directory (`PICKLOCK_CONFIG_DIR`, when set, overrides the usual
+platform config directory). Older preference files receive defaults for missing
+fields; invalid files report an error from the loader and use the complete safe
+defaults. Saving preserves sidebar width and editor height, but never stores
+table selections, structured filters, filter values or row data.
+
+**E2 does not yet enforce the four byte settings.** Page size and editor row
+limits do not prevent fetching a large individual value. Future byte budgets
+refer to retained content, not total process RSS or allocations made by drivers.
+
+Marked preview/deferred values are displayed separately from `NULL` and empty
+strings. Copying an incomplete field or whole detail is rejected with an
+explanation; complete fields remain copyable. CSV/JSON export also rejects
+marked incomplete cells/items or a cut-off result before creating/writing the
+output file. Refine the query to obtain a complete smaller result. Explicit
+preview-copy choices and full-value retrieval are E5 work; table browsing does
+not yet produce bounded server previews in E2.
 
 ---
 

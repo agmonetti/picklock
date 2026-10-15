@@ -116,7 +116,7 @@ picklock --read-only redis://localhost:6379/0
 | `←→` (main) / `Alt+←→` (editor) | Scroll table columns horizontally |
 | `Ctrl+N` | New connection |
 | `Ctrl+S` | Save connection |
-| `Ctrl+P` | Settings (query timeout) |
+| `Ctrl+P` | Settings (timeout, page size and saved result limits; [scope/defaults](USAGE.md#settings-and-saved-limits)) |
 | `?` | Help / Cheatsheet |
 | `Ctrl+C` / `q` | Quit |
 | click drag (editor) | Select & auto-copy query text |

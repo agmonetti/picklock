@@ -80,11 +80,42 @@ are classified conservatively as ordinary tables.
 - PostgreSQL casts the bound parameter (`$1::<data_type>` with the type read
   from `information_schema` and cached per table+column) so the primary-key
   index stays usable regardless of the column type.
-- Tables without a primary key or with a composite primary key fall back to
-  OFFSET pagination with `ORDER BY 1` (the first column).
+- Tables with composite primary keys use OFFSET pagination ordered by the full
+  primary-key tuple. Without a primary key, a unique, non-partial index whose
+  columns are all `NOT NULL` is used for stable ordering when available.
+  Partial/filtered and expression indexes are not treated as global keys. Other
+  tables fall back to `ORDER BY 1`; concurrent writes can reorder pages.
+- Relational browse requests one lookahead row instead of running `COUNT(*)`
+  for every page. Totals are unknown (`-1`); paging uses that extra row.
 - `LIMIT n` uses integers (page, pageSize), safe for direct interpolation.
-- Identifiers (table/column names) are ALWAYS escaped with `QuoteIdent`, including the browser's active table: `SELECT * FROM "my table"`.
-- `Result.Rows` is `[][]string` in all engines. The engine store converts each native type to string (including `[]byte`, `time.Time`, `decimal`) and `NULL` to `""` (the UI renders it as `∅`). The parallel `Result.Nulls [][]bool` marks the cells that were SQL NULL, so exporters and the UI can tell a real NULL from an empty string; it is `nil` for manually-built results.
+- Identifiers (table/column names) are ALWAYS escaped with `QuoteIdent`. Generated
+  Browse SQL selects explicit projected expressions; it no longer uses `SELECT *`.
+- `Result.Rows` is `[][]string` in all engines. Native values are serialized for
+  display; `Result.Nulls [][]bool` remains authoritative for SQL NULL versus an
+  empty string. `Incomplete` marks a preview; `RowRefs` hold typed hidden keys.
+  Manually-built results may leave these metadata fields nil.
+
+### Per-engine Browse projection
+
+The relational adapter applies the same column/filter validation and binds filter
+values as parameters. Each SQL driver builds only the requested visible columns,
+plus native identity fields required for navigation. A key used as a visible
+direct scalar is reused for its `RowReference`; projected/truncated values are
+never used to reconstruct an identity.
+
+| Engine | Metadata classification and server expression | Bound and representation |
+|---|---|---|
+| SQLite | Classifies each stored value with `typeof`, regardless of declared affinity. Text uses `substr` by characters; BLOB uses byte substring; other dynamic values pass through. | The driver returns at most `preview_bytes` characters/bytes at SQL level; Go retains no more than that many bytes and removes an incomplete UTF-8 suffix. Runtime type (`TEXT`/`BLOB`) and NULL are separate flags. Binary previews render as `0x` hex. |
+| MySQL / MariaDB | Character/text/enum/set/JSON types are cast to `utf8mb4` then byte-substringed; blob values are byte-substringed. Spatial values use bounded WKB. Known scalar types stay native; unknown types fail the browse rather than falling back to full values. | `OCTET_LENGTH` sets preview metadata. Text is capped at `preview_bytes` and made valid UTF-8; binary previews render as `0x` hex. MariaDB is independently exercised despite sharing the driver. |
+| PostgreSQL | Known scalar types stay native. Character, `name`, JSON/JSONB/XML and other types (including domains/enums/arrays/extensions) use a `::text` prefix; `bytea` uses byte substring. | Text is capped to `preview_bytes` in UTF-8 bytes after the SQL character prefix; `octet_length(convert_to(..., 'UTF8'))` marks incompleteness. Binary previews render as `0x` hex. |
+| SQL Server | Character types use `SUBSTRING`; Unicode, XML, `sql_variant`, spatial and `hierarchyid` types are converted to a bounded textual representation; binary/image/rowversion use byte substring. Known scalar types stay native; unrecognized base types fail safely. | `DATALENGTH` flags source truncation; Go additionally caps returned text by UTF-8 byte count and trims to a valid boundary. Binary previews render as `0x` hex. |
+
+`preview_bytes` limits retained textual preview bytes, not total process RSS.
+Expressions bound the result returned for each selected cell, but SQL Server,
+SQLite and PostgreSQL may internally read/convert a larger value to produce a
+prefix. No protocol-level network-byte measurement is available from these
+drivers; integration evidence measures returned `Browse` values, not physical
+wire traffic. `SELECT` statements issued by the user remain unchanged.
 
 ## Export to CSV/JSON
 
@@ -217,7 +248,7 @@ server with an untrusted certificate fails with the driver's literal error
 |---|---|
 | Table with no rows | Show column headers, empty area, text `empty table`. |
 | Column with NULL value | Show `∅` in gray. |
-| Very long text value (>200 chars) | Truncate with `…` to the column width. |
+| Text exceeding its column width (at most 36 terminal cells) | Truncate with `…` inside that budget, preserving grapheme clusters. |
 | Very long column name | Truncate too, with `…`. |
 | Table name with spaces or special characters | Escape with the dialect's `QuoteIdent`: `"my table"`, `` `my table` ``, `[my table]`. |
 | Database with 500+ tables | The sidebar shows a scrollable subset. Don't load everything into render memory. |
@@ -282,16 +313,34 @@ flag (merged as `cfg.ReadOnly = cfg.ReadOnly || globalReadOnly` before opening).
 - File: `~/.config/picklock/prefs.json`, permissions `0600`.
 - Structure:
   ```json
-  { "query_timeout_seconds": 60, "sidebar_width": 0, "editor_height": 0 }
+  {
+    "query_timeout_seconds": 60,
+    "browse_page_size": 50,
+    "preview_bytes": 256,
+    "value_block_bytes": 65536,
+    "editor_max_cell_bytes": 65536,
+    "editor_max_result_bytes": 16777216,
+    "editor_max_rows": 10000,
+    "sidebar_width": 0,
+    "editor_height": 0
+  }
   ```
-- `query_timeout_seconds` bounds every user query run from the editor
-  (`context.WithTimeout`); values `<= 0` fall back to the default (60s).
+- Query timeout bounds editor and browser operations (`context.WithTimeout`),
+  from 1 to 86400 seconds. All row/byte limits are positive, integer overflow
+  is rejected, preview bytes ≤ block bytes and editor cell bytes ≤ result bytes.
+- Old files inherit missing defaults. Invalid files return an error plus safe
+  defaults; invalid saves do not overwrite the previous preferences.
+- Browse page size is the default for new table openings/connections; active
+  selection changes use `Browser.SetOptions`, resetting cursor history.
+- `preview_bytes` is enforced by relational Browse projections; full-value
+  blocks remain E5 and editor byte retention remains E6. Filters/options/data
+  are never persisted in `Prefs`.
 - `sidebar_width` / `editor_height` persist the workspace pane sizes changed
   with a right-click drag; `0` means automatic. The values are clamped again
   against the current terminal size on every render.
 - Edited from the settings screen (`Ctrl+P`, available from the connect and
-  workspace screens) and saved with `Enter`. The change applies to the next
-  query.
+  workspace screens; `Tab`/`Shift+Tab`/`↑↓` select fields) and saved with `Enter`.
+  Timeout/editor rows apply to the next query; page defaults to a new opening.
 - Same directory resolution as `connections.json` (`PICKLOCK_CONFIG_DIR` override).
 
 ## User-facing messages
@@ -334,21 +383,46 @@ ERROR: PERMISSION DENIED
   - The setup creates a test table `picklock_test`, runs the same assertions as the SQLite test.
   - Docker for local development: the repo's `compose.yaml` starts the 4 engines with fixed credentials and the auto-created `test` database (`docker compose up -d`). Full commands in `README.md`.
 - Don't mock `Store` for browser/editor tests — use the real implementation with in-memory SQLite. It's more reliable.
-- Test names: `TestBrowser_SelectTable_LoadsColumns`, `TestStore_Query_ReturnsError_OnInvalidSQL`.
+- Test names: `TestBrowser_SelectItem_LoadsColumns`, `TestStore_Query_ReturnsError_OnInvalidSQL`.
 - No external testing frameworks. Only stdlib `testing` and `errors.Is` for assertions.
 
 ## Performance considerations
 
-- `CountTable` (the `COUNT(*)` for pagination) runs when a table is selected and
-  on `Reload` (manual refresh or after a write query). It does NOT run on every
-  page navigation (`PgUp`/`PgDn`): the row count is kept from the last load, so
-  browsing a big table does not re-scan it on every page.
+- Relational browsing no longer runs `COUNT(*)` for each page. It requests one
+  extra row and uses it only as a lookahead; totals remain unknown (`-1`).
+  Exact count is still available through the explicit table-count API.
+- Structured column selection and typed filters are applied in the server query
+  by the four relational driver implementations (MySQL also covers MariaDB).
+  Default Browse uses explicit projections and bounded previews for potentially
+  large text/JSON/binary values; native `RowReferences` keep navigation keys
+  hidden when not selected. The options form is E4; complete-value reading is E5.
+- Browse results retain only the current page; `Browser.Clone` shares its
+  immutable page, and a single cancellable navigation replaces it on success.
+  Totals remain unknown and lookahead controls the next-page affordance.
 - Browser navigation (open table, change page, refresh) runs in the background,
   like editor queries: it is bounded by the configured query timeout, cancellable
   with `Esc`, and shows a spinner instead of freezing the UI.
-- Editor queries cap the number of rows loaded into memory (`MaxResultRows`,
-  10k); a longer result is marked `Truncated` and the UI shows a notice.
-- Column widths are computed once when loading the table/result. Not on every frame.
+- Editor executors receive `store.QueryLimits`; `editor_max_rows` configures
+  the existing row cap (default 10000), while cell/result byte enforcement
+  remains E6. Marked partial/cutoff results are visible and cannot be copied
+  or exported as complete. Legacy row cutoffs do not invent retained-byte counts.
+- Column widths are recomputed during rendering from at most 100 supplied rows.
+  Each measurement stops at 36 terminal cells; once a column reaches that cap,
+  later sampled cells in that column are skipped. There is no width cache.
+- Cell truncation walks the prefix through the visual budget plus one grapheme
+  of lookahead, rather than repeatedly measuring/copying the whole value.
+  It uses the existing `uax29` grapheme iterator and `runewidth` width policy;
+  the ellipsis is part of the budget and callers apply ANSI styling afterwards.
+- Row detail wrapping stops at the viewport end and uses string slices rather
+  than repeated rune concatenation. Field navigation/hit testing still counts
+  full wrapped fields, and deep scroll scans the preceding prefix. Raw text
+  still searches for newlines, and graph/document formatting still has metadata
+  overhead; these are not general constant-time rendering guarantees.
+- Grid rendering bounds hidden-text work independently of relational Browse,
+  which now caps returned cell projections. SQL engines may still read/convert
+  larger values internally; the driver protocol does not expose transferred-byte
+  counts here. A single unusually long grapheme/zero-width sequence can itself
+  require substantial scanning. Full-value reading is still E5.
 - `View()` in bubbletea is called every frame. Don't do I/O there. Only string building.
 - `lipgloss.Render()` is expensive in loops. Precompute styles as package-level variables, don't create them on every `View()` call.
 - The `[]byte` → string conversion of each cell happens only once in the store, when reading the row. Don't repeat it in the UI.

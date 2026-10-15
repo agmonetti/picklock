@@ -242,10 +242,43 @@ type QueryExecutor interface {
     Language() string         // "sql", "mql", "redis", "cql", "cypher"
     PromptTitle() string      // "SQL EDITOR", "MONGO QUERY", "REDIS COMMAND", "CQL EDITOR", "CYPHER EDITOR"
     Placeholder() string      // Contextual placeholder snippet
-    Execute(ctx context.Context, buffer string, line int, maxRows int) (DataView, error)
+    Execute(ctx context.Context, buffer string, line int, limits QueryLimits) (DataView, error)
     IsMutation(statement string) bool
 }
 ```
+
+`QueryLimits` is shared by all executors: positive `MaxRows`, `MaxCellBytes`,
+`MaxResultBytes`, with cell bytes ≤ result bytes. Defaults are 10000 rows,
+64 KiB/cell and 16 MiB/result. E2 validates/transports the complete budget and
+preserves existing row caps; byte enforcement is E6, not an E2 guarantee.
+MCP keeps its separate 500-row policy using the same budget type.
+
+`BrowseRequest` adds session-only `BrowseOptions{Columns, Filters, PreviewBytes}`
+alongside `ObjectName`, `PageSize`, `Page`, `Cursor`. Filters are AND-combined,
+use metadata column names and the allowed comparison/NULL operators, and carry
+canonical typed values rather than SQL fragments. Drivers still own quoting,
+Relational SQL drivers apply column selection and structured filters in the
+server query with driver-specific quoting and parameter binding. Bounded
+previews remain unsupported and return an explicit error until each driver has
+a real limited projection. MongoDB, Redis, Cassandra and Neo4j reject all SQL
+options and retain their native browsing protocols.
+
+The view structs above describe their content fields; current E2 metadata is
+defined in `internal/store/store.go` and `browsing.go`. `TabularData.Incomplete`
+indexes only partial/deferred cells; `Rows` holds the sole value/prefix copy
+and `Nulls` remains authoritative. Non-tabular equivalents attach metadata to
+documents, KV entries, graph properties and raw text. All formats carry
+`ResultStatus` for execution cutoffs/retained counts. Unknown cell size is nil,
+never a fabricated zero. Copy/export rejects marked incomplete content;
+renderers derive labels without inserting them into the source payload.
+
+`RowRefs` hold optional opaque native PK/unique-not-null identities, independent
+of visible strings. References own their key bytes and survive scan-buffer
+reuse; `RowRef` safely returns nil when identity is unavailable. `CellReader`
+is optional and currently has no implementing driver: E5 must provide real,
+consistent, bounded server reads, not fake methods on every source. Its request
+requires identity, a column and a positive block size; NULL has no reader.
+
 
 ---
 

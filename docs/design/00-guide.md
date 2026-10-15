@@ -27,6 +27,7 @@ This directory contains everything you need to implement `picklock` without aski
 | `05-technical-decisions.md` | DSNs per engine, edge cases, dialects, saved connections, performance. |
 | `06-security.md` | Threat model, security decisions and backlog (maintainers). |
 | `07-user-security.md` | Security for the end user. |
+| [08-heavy-data-browsing-plan.md](08-heavy-data-browsing-plan.md) | Issue #1: safe table browsing, bounded rendering, on-demand values, and the active/completed implementation stages. |
 
 Guides for the end user (not for the agent):
 
@@ -38,6 +39,8 @@ Guides for the end user (not for the agent):
 ## Main instruction
 
 Implement `picklock` following the documents in order. Respect the phases of `04-implementation.md` — each phase has a done criterion that must pass before moving on.
+
+For issue #1, follow `08-heavy-data-browsing-plan.md` as the current execution and status tracker. The original implementation phases above remain historical context; the issue plan records its own dependencies, acceptance criteria, and observed verification.
 
 If something is not specified, apply the principle of `01-vision.md`: the simplest and most readable option that fulfills the functionality. No over-engineering.
 

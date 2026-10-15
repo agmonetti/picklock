@@ -133,13 +133,17 @@ the ID column (if it exists) is always the first one.
 │  3 | Carol       | c@test.com   │
 ```
 
-- Column widths are calculated automatically to the maximum of the visible content, without exceeding the available space. The columns are separated by
+- Natural column widths sample up to the first 100 rows of the supplied page/result
+  window, with a minimum of 4 and a maximum of 36 terminal cells. A narrow viewport
+  may shrink the first column further. Measurement stops at the maximum instead
+  of scanning the hidden suffix of a large value. Columns are separated by
   ` | ` and a dashed line connects them under the header.
 - An empty table keeps the header and the separator and draws a centered
   empty-table ASCII box with `( 0 rows returned )` underneath; the pane title
   shows `users · (empty)`.
 - `NULL` values are shown as `∅` in dim gray.
-- Very long values are truncated with `…` to the column width.
+- Very long values are truncated with `…` inside the column-width budget,
+  without splitting Unicode grapheme clusters. Styling is applied after cropping.
 - `↑↓` / `j k` navigate rows; `PgUp`/`PgDn` (or `Ctrl+U`/`Ctrl+D`) change page; `g`/`G` go to the first/last row.
 - `r` reloads the table (after a write query it reloads automatically).
 - `i` switches the main pane to the structure; `Esc` returns to the browser.
@@ -225,9 +229,11 @@ appear below, separated by a line.
 | `PgDn` / `Ctrl+D` | Next page |
 | `g` / `Home` | First row |
 | `G` / `End` | Last row |
+| `Alt+←` / `Alt+H`, `Alt+→` / `Alt+L` | Reveal previous/next column |
 | `r` | Refresh (reloads table; auto after a write query) |
 | `i` | Show structure |
-| `Esc` | Back to browser (from structure) |
+| `v` | Show already-loaded row/item detail |
+| `Esc` | Back to browser (from structure or detail) |
 
 ### Editor
 
@@ -235,6 +241,7 @@ appear below, separated by a line.
 |---|---|
 | `Ctrl+R` | Run query |
 | `Alt+C` / `Ctrl+Y` | Copy query buffer to clipboard |
+| `Alt+←` / `Alt+H`, `Alt+→` / `Alt+L` | Reveal previous/next result column |
 | `↑` (on empty input) | Previous query in history |
 | `↓` (on empty input) | Next query in history |
 | `Ctrl+L` | Clear input |
