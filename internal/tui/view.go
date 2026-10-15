@@ -39,7 +39,11 @@ func (m *Model) render() string {
 	case ScreenSettings:
 		content = m.settings.View(innerW, contentHeight)
 	case ScreenWorkspace:
-		if m.showDetail {
+		if m.browseDialog != browseDialogNone {
+			content = m.renderBrowseDialog(innerW)
+		} else if m.showDetail && m.detailSaving {
+			content = m.renderDetailSavePrompt(innerW, contentHeight)
+		} else if m.showDetail {
 			content = m.renderActiveDetail(innerW, contentHeight)
 		} else if m.exporting {
 			content = m.renderExportPrompt(innerW, contentHeight)
@@ -144,9 +148,20 @@ func (m *Model) renderFooter() string {
 			{"esc", "back"},
 		})
 	case ScreenWorkspace:
-		if m.showDetail {
+		if m.browseDialog != browseDialogNone {
+			if m.browseDialog == browseDialogNotice {
+				left = footerBindings([]binding{{"e", "explore"}, {"a", "narrow"}, {"c/Esc", "cancel"}})
+			} else {
+				left = footerBindings([]binding{{"↑↓", "choose"}, {"space", "toggle"}, {"tab", "next"}, {"enter", "apply"}, {"esc", "cancel"}})
+			}
+		} else if m.showDetail && m.detailSaving {
+			left = footerBindings([]binding{{"enter", "save file"}, {"esc", "cancel"}})
+		} else if m.showDetail {
 			left = footerBindings([]binding{
 				{"↑↓", "fields"},
+				{"e", "open complete"},
+				{"s", "save file"},
+				{"←→", "file page"},
 				{"c", "copy val"},
 				{"C", "copy field"},
 				{"a", "copy all"},
@@ -176,7 +191,7 @@ func (m *Model) renderFooter() string {
 						{"↑↓", "navigate"},
 						{"←→", "columns"},
 						{"i", "structure"},
-						{"v", "detail"},
+						{"o", "browse options"},
 						{"r", "refresh"},
 						{"pgup/pgdn", "page"},
 						{"tab", "next"},

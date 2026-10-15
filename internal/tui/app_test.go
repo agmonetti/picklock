@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	_ "modernc.org/sqlite"
 
@@ -23,6 +24,8 @@ import (
 	_ "github.com/agmonetti/picklock/internal/store/sqlite"
 	"github.com/agmonetti/picklock/internal/tui/screens"
 )
+
+var autoExploreInTests = true
 
 func queryLimitsForRows(maxRows int) store.QueryLimits {
 	limits := store.DefaultQueryLimits()
@@ -161,7 +164,9 @@ func step(t *testing.T, m *Model, msg tea.Msg) {
 				continue
 			}
 			if subMsg := sub(); subMsg != nil {
-				step(t, m, subMsg)
+				if _, isSpinner := subMsg.(spinner.TickMsg); !isSpinner {
+					step(t, m, subMsg)
+				}
 			}
 		}
 		return
@@ -177,13 +182,18 @@ func step(t *testing.T, m *Model, msg tea.Msg) {
 			if _, isClear := out.(clearMessageMsg); isClear {
 				return
 			}
+			if _, isSpinner := out.(spinner.TickMsg); isSpinner {
+				return
+			}
 			if batch, ok := out.(tea.BatchMsg); ok {
 				for _, sub := range batch {
 					if sub == nil {
 						continue
 					}
 					if subMsg := sub(); subMsg != nil {
-						if _, isClear := subMsg.(clearMessageMsg); !isClear {
+						_, isClear := subMsg.(clearMessageMsg)
+						_, isSpinner := subMsg.(spinner.TickMsg)
+						if !isClear && !isSpinner {
 							step(t, m, subMsg)
 						}
 					}
@@ -192,6 +202,9 @@ func step(t *testing.T, m *Model, msg tea.Msg) {
 				step(t, m, out)
 			}
 		}
+	}
+	if autoExploreInTests && m.browseDialog == browseDialogNotice {
+		step(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e")})
 	}
 }
 
@@ -1709,5 +1722,69 @@ func TestModel_EditorHorizontalScroll_KeysAndMouse(t *testing.T) {
 	pressKey(t, m, "ctrl+r")
 	if m.editorScreen.ColScroll() != 0 {
 		t.Errorf("editor colScroll = %d, want 0 after running new query", m.editorScreen.ColScroll())
+	}
+}
+func TestModel_HeavyBrowsePromptPreservesActiveViewOnCancel(t *testing.T) {
+	autoExploreInTests = false
+	t.Cleanup(func() { autoExploreInTests = true })
+	m := connect(t)
+	if m.browser.ActiveTable != "orders" || m.browseDialog != browseDialogNone {
+		t.Fatalf("initial view = %q, dialog=%v", m.browser.ActiveTable, m.browseDialog)
+	}
+	users := -1
+	for i, name := range m.browser.Tables {
+		if name == "users" {
+			users = i
+			break
+		}
+	}
+	if users < 0 {
+		t.Fatal("users table missing")
+	}
+	beforeRows := m.browser.Rows
+	cmd := m.selectTable(users)
+	if cmd == nil {
+		t.Fatal("selection did not start metadata preparation")
+	}
+	step(t, m, cmd())
+	if m.browseDialog != browseDialogNotice || m.browser.ActiveTable != "orders" {
+		t.Fatalf("after inspection: dialog=%v active=%q", m.browseDialog, m.browser.ActiveTable)
+	}
+	if len(m.browser.Rows) != len(beforeRows) {
+		t.Fatalf("active rows changed before a choice: got %d, want %d", len(m.browser.Rows), len(beforeRows))
+	}
+	step(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
+	if m.browseDialog != browseDialogOptions {
+		t.Fatal("Acotar did not open the options form")
+	}
+	step(t, m, tea.KeyMsg{Type: tea.KeyEsc})
+	if m.browser.ActiveTable != "orders" {
+		t.Fatal("cancelling options changed the active browser selection")
+	}
+	cmd = m.selectTable(users)
+	if cmd == nil {
+		t.Fatalf("retry selection unavailable: navigating=%t prepared=%v active=%q", m.navigating, m.browsePrepared, m.browser.ActiveTable)
+	}
+	step(t, m, cmd())
+	step(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e")})
+	if m.browser.ActiveTable != "users" || m.browseDialog != browseDialogNone {
+		t.Fatalf("Explore did not commit the prepared table: active=%q dialog=%v", m.browser.ActiveTable, m.browseDialog)
+	}
+	press(t, m, "o")
+	if m.browseDialog != browseDialogOptions {
+		t.Fatal("browse options key did not reopen the form")
+	}
+	step(t, m, tea.MouseMsg{X: 5, Y: 5, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+	pressKey(t, m, "tab")                      // filter column
+	pressKey(t, m, "down")                     // name
+	pressKey(t, m, "tab")                      // operator (=)
+	pressKey(t, m, "tab")                      // filter value
+	step(t, m, tea.KeyMsg{Type: tea.KeySpace}) // enable filter
+	press(t, m, "Alice")
+	pressKey(t, m, "tab") // page size
+	pressKey(t, m, "enter")
+	if m.browser.ActiveTable != "users" || len(m.browser.Rows) != 1 ||
+		len(m.browser.Rows[0]) != 1 || m.browser.Rows[0][0] != "1" {
+		t.Fatalf("applied browse options returned rows=%v", m.browser.Rows)
 	}
 }

@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"context"
 	"os"
 	"time"
 
@@ -11,7 +10,6 @@ import (
 
 	"github.com/agmonetti/picklock/internal/browser"
 	"github.com/agmonetti/picklock/internal/editor"
-	"github.com/agmonetti/picklock/internal/store"
 	"github.com/agmonetti/picklock/internal/tui/screens"
 )
 
@@ -60,9 +58,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "ctrl+c":
+			m.closeDetailCell()
 			return m, tea.Quit
 		case "q":
 			if !m.typing() {
+				m.closeDetailCell()
 				return m, tea.Quit
 			}
 		case "?":
@@ -82,7 +82,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
-		// the export prompt owns every key while it is open
+		// The file-path prompt owns every key while it is open.
+		if m.detailSaving {
+			return m.handleDetailSaveKeys(msg)
+		}
+		if m.browseDialog != browseDialogNone {
+			return m, m.handleBrowseDialogKey(msg)
+		}
 		if m.exporting {
 			return m.handleExportKeys(msg)
 		}
@@ -99,8 +105,15 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if m.navigating && msg.Type == tea.KeyEsc {
+			m.navID++
 			m.cancelNav()
 			m.navigating = false
+			m.pendingBrowseAcceptance = ""
+			m.browseOpenPending = false
+			if m.browsePreparing {
+				m.sidebarCursor = m.browsePreviousIndex
+				m.browsePreparing = false
+			}
 			return m, nil
 		}
 		if m.connecting && msg.Type == tea.KeyEsc {
@@ -147,6 +160,36 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case screens.SettingsBackMsg:
 		m.leaveSettings()
 
+	case cellSpoolTickMsg:
+		if m.detailCellLoading {
+			return m, cellSpoolTickCmd()
+		}
+
+	case cellSpoolDoneMsg:
+		m.detailCellLoading = false
+		if m.detailCellCancel != nil {
+			m.detailCellCancel()
+			m.detailCellCancel = nil
+		}
+		m.detailCellProgress = nil
+		if !m.showDetail {
+			if msg.file != nil {
+				name := msg.file.Name()
+				_ = msg.file.Close()
+				_ = os.Remove(name)
+			}
+			return m, nil
+		}
+		if msg.err != nil {
+			return m, m.setError("complete cell read failed: " + msg.err.Error())
+		}
+		m.detailCellFile, m.detailCellSize, m.detailCellBinary = msg.file, msg.size, msg.binary
+		m.detailCellOffset = 0
+		delete(m.detailIncomplete, m.detailCursor)
+		if len(m.detailIncomplete) == 0 {
+			m.detailIncompleteReason = ""
+		}
+
 	case editorDoneMsg:
 		m.cancelQuery()
 		if msg.token != m.queryID {
@@ -171,9 +214,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, errCmd)
 		}
 		if msg.err == nil && m.browser != nil && m.store != nil && msg.ed.Wrote {
-			if cmd := m.runBrowserOp(func(b *browser.Browser, st store.DataSource, ctx context.Context) error {
-				return b.Reload(ctx, st)
-			}); cmd != nil {
+			if cmd := m.reloadActiveCmd(); cmd != nil {
 				cmds = append(cmds, cmd)
 			}
 		}
@@ -181,6 +222,70 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		return m, tea.Batch(cmds...)
+
+	case preparedDoneMsg:
+		if msg.load {
+			if msg.token != m.queryID {
+				return m, nil
+			}
+			m.cancelConnect()
+			m.connecting = false
+			if msg.err != nil {
+				m.closeStore()
+				m.connect.SetError(friendlyErr(msg.err).Error())
+				m.screen = ScreenConnect
+				return m, nil
+			}
+			m.browser = msg.b
+			m.screen = ScreenWorkspace
+		} else {
+			if msg.navID != m.navID || msg.token != m.queryID {
+				return m, nil
+			}
+			m.cancelNav()
+			m.navigating = false
+			m.browsePreparing = false
+			if msg.err != nil {
+				m.browseForceOptions = false
+				m.browseRefreshCurrent = false
+				m.sidebarCursor = m.browsePreviousIndex
+				return m, m.setErr(friendlyErr(msg.err))
+			}
+		}
+		if msg.item == nil {
+			return m, nil
+		}
+		sameActive := !msg.initial && m.browser != nil && msg.item.Name == m.browser.ActiveTable
+		sameSchema := false
+		if sameActive && m.browser.Structure != nil {
+			sameSchema = browseSignature(&browser.PreparedItem{Structure: m.browser.Structure}) == browseSignature(msg.item)
+		}
+		if !msg.initial {
+			m.browser = msg.b
+		}
+		m.browsePrepared = msg.item
+		m.browseTargetIndex, m.browseInitial = msg.index, msg.initial
+		if len(m.heavyTypes()) > 0 && m.acceptedBrowse[msg.item.Name] != browseSignature(msg.item) && !m.browseForceOptions {
+			m.browseDialog = browseDialogNotice
+			return m, nil
+		}
+		if m.browseForceOptions {
+			m.openBrowseOptions()
+			m.browseForceOptions = false
+			return m, nil
+		}
+		if m.browseRefreshCurrent && sameActive && sameSchema {
+			return m, m.refreshPrepared(msg.item)
+		}
+		options, pageSize := m.defaultBrowseOptions(), m.prefs.BrowsePageSize
+		if sameActive {
+			pageSize = m.browser.PageSize
+			if sameSchema {
+				options = m.browser.Options
+			}
+		}
+		m.browseRefreshCurrent = false
+		return m, m.applyPreparedBrowse(options, pageSize, false)
 
 	case browserDoneMsg:
 		if msg.load {
@@ -198,6 +303,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if msg.err != nil {
 			err := friendlyErr(msg.err)
+			m.pendingBrowseAcceptance = ""
+			if m.browseOpenPending {
+				m.sidebarCursor = m.browsePreviousIndex
+				m.browseOpenPending = false
+			}
 			if msg.load {
 				m.closeStore()
 				m.connect.SetError(err.Error())
@@ -206,9 +316,25 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, m.setErr(err)
 		}
+		if m.showDetail && m.browser != nil && msg.b != nil && m.browser.ActiveTable != msg.b.ActiveTable {
+			m.closeDetailCell()
+			m.showDetail = false
+		}
 		m.browser = msg.b
 		if msg.load {
 			m.screen = ScreenWorkspace
+		}
+		if m.pendingBrowseAcceptance != "" && m.browser != nil {
+			m.acceptedBrowse[m.browser.ActiveTable] = m.pendingBrowseAcceptance
+			m.pendingBrowseAcceptance = ""
+		}
+		if m.browseOpenPending {
+			m.sidebarCursor = m.browseOpenIndex
+			m.structure = false
+			m.structureScroll, m.colScroll = 0, 0
+			m.showMain = true
+			m.setFocus(screens.FocusMain)
+			m.browseOpenPending = false
 		}
 		m.clampSidebar()
 		return m, nil

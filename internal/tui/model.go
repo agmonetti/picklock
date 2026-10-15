@@ -3,6 +3,8 @@ package tui
 
 import (
 	"context"
+	"os"
+	"sync/atomic"
 	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
@@ -39,6 +41,19 @@ const (
 	resizeSidebar
 	resizeEditor
 )
+
+type cellSpoolDoneMsg struct {
+	file   *os.File
+	size   int64
+	binary bool
+	err    error
+}
+type cellSpoolProgress struct {
+	done  atomic.Int64
+	total atomic.Int64
+}
+
+type cellSpoolTickMsg struct{}
 
 // editorDoneMsg carries the result of a query run in the background.
 type editorDoneMsg struct {
@@ -117,26 +132,53 @@ type Model struct {
 	msgSeq          int    // sequence token to invalidate older clear timers
 
 	// Detail borrows retained values; metadata never contains a second payload.
-	showDetail             bool
-	detailCursor           int
-	detailScroll           int
-	detailTitle            string
-	detailCols             []string
-	detailVals             []string
-	detailDoc              string // formatted JSON document preview
-	detailGraph            *store.GraphNode
-	detailNulls            []bool
-	detailIncomplete       map[int]store.IncompleteCell
-	detailItemIncomplete   *store.IncompleteCell
-	detailIncompleteReason string
+	showDetail              bool
+	detailCursor            int
+	detailScroll            int
+	detailTitle             string
+	detailCols              []string
+	detailVals              []string
+	detailDoc               string // formatted JSON document preview
+	detailGraph             *store.GraphNode
+	detailNulls             []bool
+	detailIncomplete        map[int]store.IncompleteCell
+	detailItemIncomplete    *store.IncompleteCell
+	detailIncompleteReason  string
+	detailCellFile          *os.File
+	detailCellSize          int64
+	detailCellOffset        int64
+	detailCellBinary        bool
+	detailCellLoading       bool
+	detailCellCancel        context.CancelFunc
+	detailCellProgress      *cellSpoolProgress
+	browseDialog            browseDialog
+	browsePrepared          *browser.PreparedItem
+	browseTargetIndex       int
+	browseInitial           bool
+	browseColumns           []bool
+	browseColumnCursor      int
+	browseFilterColumn      int
+	browseFilterOperator    int
+	browseFilterEnabled     bool
+	browseFormFocus         int
+	browseFilterInput       textinput.Model
+	browsePageInput         textinput.Model
+	acceptedBrowse          map[string]string
+	browseOpenIndex         int
+	browseOpenPending       bool
+	browsePreviousIndex     int
+	browsePreparing         bool
+	browseRefreshCurrent    bool
+	pendingBrowseAcceptance string
+	browseForceOptions      bool
 
-	// export prompt ("alt+e"): a centered input for the target filename
-	exporting   bool
-	exportInput textinput.Model
-	exportErr   string
-	exportRes   store.DataView
-	exportNote  string // "N rows" description appended to the success message
-	exported    string // last success message, rendered in green
+	exporting    bool
+	detailSaving bool
+	exportInput  textinput.Model
+	exportErr    string
+	exportRes    store.DataView
+	exportNote   string // "N rows" description appended to the success message
+	exported     string // last success message, rendered in green
 
 	// mouse text drag-selection in query editor
 	dragSelecting bool
@@ -158,24 +200,30 @@ func New(opts ...NewOpts) *Model {
 	exportInput.Cursor.BlinkSpeed = screens.CursorBlink
 	exportInput.Prompt = " "
 	exportInput.Width = 40
+	filterInput, pageInput := textinput.New(), textinput.New()
+	filterInput.Prompt, pageInput.Prompt = " ", " "
+	filterInput.Width, pageInput.Width = 32, 8
 	m := &Model{
-		opts:         o,
-		connect:      screens.NewConnScreen(saved),
-		settings:     screens.NewSettingsScreen(),
-		editor:       newEditorWithPersistedHistory(),
-		editorScreen: screens.NewEditorScreen(),
-		exportInput:  exportInput,
-		screen:       ScreenConnect,
-		prevScreen:   ScreenConnect,
-		focus:        screens.FocusSidebar,
-		keys:         DefaultKeyMap(),
-		spinner:      spinner.New(spinner.WithSpinner(spinner.Dot), spinner.WithStyle(styles.StyleHeaderDim)),
-		showSidebar:  true,
-		showMain:     true,
-		showEditor:   true,
-		prefs:        p,
-		sidebarW:     p.SidebarWidth,
-		editorH:      p.EditorHeight,
+		opts:              o,
+		connect:           screens.NewConnScreen(saved),
+		settings:          screens.NewSettingsScreen(),
+		editor:            newEditorWithPersistedHistory(),
+		editorScreen:      screens.NewEditorScreen(),
+		exportInput:       exportInput,
+		browseFilterInput: filterInput,
+		browsePageInput:   pageInput,
+		acceptedBrowse:    make(map[string]string),
+		screen:            ScreenConnect,
+		prevScreen:        ScreenConnect,
+		focus:             screens.FocusSidebar,
+		keys:              DefaultKeyMap(),
+		spinner:           spinner.New(spinner.WithSpinner(spinner.Dot), spinner.WithStyle(styles.StyleHeaderDim)),
+		showSidebar:       true,
+		showMain:          true,
+		showEditor:        true,
+		prefs:             p,
+		sidebarW:          p.SidebarWidth,
+		editorH:           p.EditorHeight,
 	}
 	if o.InitialCfg != nil {
 		// show the workspace (with its connecting spinner) instead of flashing

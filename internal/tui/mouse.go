@@ -22,6 +22,9 @@ func (m *Model) handleMouse(msg tea.MouseMsg) tea.Cmd {
 	if m.showHelp {
 		return nil
 	}
+	if m.browseDialog != browseDialogNone {
+		return m.handleBrowseDialogMouse(msg)
+	}
 	switch m.screen {
 	case ScreenConnect:
 		return m.handleConnectMouse(msg)

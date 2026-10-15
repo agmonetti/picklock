@@ -100,10 +100,11 @@ picklock --read-only redis://localhost:6379/0
 | `↑↓` / `k j` | Navigate rows, items, documents, keys, or nodes |
 | `Enter` (sidebar) | Open item and focus main panel |
 | `PgUp` / `PgDn` | Change page / cursor forward or backward |
-| `i` | Structure inspection |
 | `v` | Detail view (full row, JSON document, KV entries, graph node) |
-| `r` | Refresh active item and catalog |
-| `Alt+E` | Export result / current page to CSV or JSON |
+| `e` (detail) | Spool a deferred relational value with byte progress |
+| `s` (completed detail value) | Stream full value to a destination file |
+| `c` / `C` (spooled detail value) | Copy full value/field only within `editor_max_cell_bytes` |
+| `Alt+E` | Export result / current page; rejects pages containing previews/deferred cells |
 | `Alt+C` / `Ctrl+Y` | Copy active query to clipboard |
 | `Alt+B` | Toggle sidebar |
 | `Alt+M` | Toggle main data view |

@@ -108,8 +108,8 @@ func TestEmptyCutoffVisibleInBrowserAndEditor(t *testing.T) {
 		browserOutput := ansi.Strip(RenderMainBrowser(b, 0, 120, 10))
 		editorOutput := ansi.Strip(NewEditorScreen().View(&editor.Editor{Data: data}, 120, 20))
 		for _, got := range []string{browserOutput, editorOutput} {
-			if !strings.Contains(got, "INCOMPLETE") || !strings.Contains(got, string(store.LimitResultBytes)) || !strings.Contains(got, "retained 0 items") {
-				t.Errorf("%T hides empty cutoff: %q", data, got)
+			if !strings.Contains(got, "INCOMPLETE") || !strings.Contains(got, string(store.LimitResultBytes)) || !strings.Contains(got, "0 items") || !strings.Contains(got, "0 B") {
+				t.Errorf("%T hides empty cutoff or retained-byte count: %q", data, got)
 			}
 		}
 	}
@@ -158,8 +158,8 @@ func TestEditorCutoffStaysVisibleInShortPane(t *testing.T) {
 		got := ansi.Strip(NewEditorScreen().View(&editor.Editor{Data: data}, 100, height))
 		lines := strings.Split(got, "\n")
 		visible := strings.Join(lines[:min(height, len(lines))], "\n")
-		if strings.Count(visible, "INCOMPLETE") != 1 {
-			t.Fatalf("height %d hides or duplicates cutoff safety status: %q", height, visible)
+		if strings.Count(visible, "INCOMPLETE") != 1 || !strings.Contains(visible, "filter/select less") || !strings.Contains(visible, "cutoff") {
+			t.Fatalf("height %d hides cutoff guidance or duplicates status: %q", height, visible)
 		}
 	}
 }

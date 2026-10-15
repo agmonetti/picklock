@@ -43,6 +43,10 @@ func (m *Model) doConnect(cfg conn.ConnectionConfig) tea.Cmd {
 	m.warn = ""
 	m.editorScreen.ResetResult()
 	m.browser = nil
+	m.browsePreparing = false
+	m.browseDialog = browseDialogNone
+	m.browsePrepared = nil
+	m.acceptedBrowse = make(map[string]string)
 	m.editor = newEditorWithPersistedHistory()
 	m.editorScreen.SetValue("")
 	m.cfgLabel = cfg.Label()
@@ -144,6 +148,10 @@ func (m *Model) newSession() {
 	m.warn = ""
 	m.editorScreen.ResetResult()
 	m.browser = nil
+	m.browsePreparing = false
+	m.browseDialog = browseDialogNone
+	m.browsePrepared = nil
+	m.acceptedBrowse = make(map[string]string)
 	m.editor = newEditorWithPersistedHistory()
 	m.editorScreen.SetValue("")
 	m.cfgLabel = ""
@@ -156,6 +164,7 @@ func (m *Model) newSession() {
 }
 
 func (m *Model) closeStore() {
+	m.closeDetailCell()
 	if m.store != nil {
 		m.store.Close()
 		m.store = nil

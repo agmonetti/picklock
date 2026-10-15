@@ -122,7 +122,7 @@ accent border. There is no screen switching.
 
 ## Pane 2: Main (browser or structure)
 
-**Browser** (default). Shows 50 rows per page (configurable in the future);
+**Browser** (default). Shows the configured page size (50 rows initially);
 the ID column (if it exists) is always the first one.
 
 ```
@@ -142,11 +142,21 @@ the ID column (if it exists) is always the first one.
   empty-table ASCII box with `( 0 rows returned )` underneath; the pane title
   shows `users · (empty)`.
 - `NULL` values are shown as `∅` in dim gray.
-- Very long values are truncated with `…` inside the column-width budget,
-  without splitting Unicode grapheme clusters. Styling is applied after cropping.
 - `↑↓` / `j k` navigate rows; `PgUp`/`PgDn` (or `Ctrl+U`/`Ctrl+D`) change page; `g`/`G` go to the first/last row.
-- `r` reloads the table (after a write query it reloads automatically).
+- `r` re-inspects before refreshing; changed heavy-column metadata can require a new choice.
+- `o` opens browse options: select columns, a structured filter, and page size.
 - `i` switches the main pane to the structure; `Esc` returns to the browser.
+
+Before the first page fetch for a relational table with potentially heavy
+`TEXT`, `BLOB`, `JSON`, or `XML` columns, a dialog lists the detected columns.
+SQL Server `varchar`/`nvarchar` base types are treated as potentially large
+because its current column metadata does not expose whether the declaration is
+`MAX`. `e` explores with the safe default projection, `a` opens options, and
+`c`/`Esc` cancels without replacing the active table or page. The options form
+supports column selection and an AND-compatible structured filter (`=`, `!=`,
+`<`, `>`, `IS NULL`) with a value parsed from column metadata and a configurable
+page size. The normal footer total can be unknown; lookahead indicates whether
+another page exists.
 
 **Structure**: columns with type and constraints (PK, NN, DEF) and indexes
 (name, columns, UNIQUE).
@@ -230,10 +240,24 @@ appear below, separated by a line.
 | `g` / `Home` | First row |
 | `G` / `End` | Last row |
 | `Alt+←` / `Alt+H`, `Alt+→` / `Alt+L` | Reveal previous/next column |
-| `r` | Refresh (reloads table; auto after a write query) |
+| `r` | Reinspect and refresh; a changed heavy-column schema may prompt before fetch |
+| `o` | Open browse options |
 | `i` | Show structure |
-| `v` | Show already-loaded row/item detail |
+| `v` | Show row/item detail; use `e` to fetch a deferred relational cell |
 | `Esc` | Back to browser (from structure or detail) |
+
+### Deferred cell viewer (`v`, then `e`)
+
+| Key | Action |
+|---|---|
+| `e` | Read the selected deferred/preview cell in the background to a private temporary file |
+| `←` / `→` | Browse 4 KiB windows of the spooled value |
+| `s` | Stream the complete spooled bytes to a destination path |
+| `c` / `C` | Copy value/field when it is within `editor_max_cell_bytes`; larger values advise saving to a file |
+| `Esc` | Cancel loading or close the viewer and remove its temporary file |
+
+`Alt+E` rejects a browsed page that contains deferred cells or previews; it
+never exports a placeholder as data.
 
 ### Editor
 

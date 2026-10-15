@@ -10,14 +10,24 @@ import (
 	"github.com/agmonetti/picklock/internal/store"
 )
 
-// browserDoneMsg carries the result of an asynchronous browser operation (a
-// page change, an item selection, a reload or the initial connection load).
+// browserDoneMsg carries the result of an asynchronous browser operation.
 type browserDoneMsg struct {
 	token int
-	navID int // matches m.navID; guards against superseded/cancelled ops
+	navID int
 	err   error
-	b     *browser.Browser // the updated browser; nil on error
-	load  bool             // true when it was the initial connection load
+	b     *browser.Browser
+	load  bool
+}
+
+type preparedDoneMsg struct {
+	token   int
+	navID   int
+	err     error
+	b       *browser.Browser
+	item    *browser.PreparedItem
+	index   int
+	initial bool
+	load    bool
 }
 
 // runBrowserOp runs a browser mutation (select item, change page, reload) on
@@ -47,34 +57,78 @@ func (m *Model) runBrowserOp(op func(b *browser.Browser, st store.DataSource, ct
 	)
 }
 
-// loadBrowserCmd loads the catalog and first page of a freshly connected store.
+// loadBrowserCmd loads the catalog and inspects the first item without fetching rows.
 func (m *Model) loadBrowserCmd(st store.DataSource) tea.Cmd {
 	token := m.queryID
 	timeout := time.Duration(m.prefs.QueryTimeout()) * time.Second
-	pageSize := m.prefs.BrowsePageSize
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	m.cancelConnect()
 	m.connectCancel = cancel
 	m.connecting = true
-	return tea.Batch(
-		func() tea.Msg {
-			b, err := browser.New(ctx, st)
-			if err != nil {
-				return browserDoneMsg{token: token, err: err, load: true}
+	return tea.Batch(func() tea.Msg {
+		b, err := browser.New(ctx, st)
+		if err != nil {
+			return preparedDoneMsg{token: token, err: err, load: true}
+		}
+		if len(b.Items) == 0 {
+			return preparedDoneMsg{token: token, b: b, load: true}
+		}
+		item, err := b.PrepareItem(ctx, b.Items[0].Name, st)
+		return preparedDoneMsg{token: token, err: err, b: b, item: item, index: 0, initial: true, load: true}
+	}, m.spinner.Tick)
+}
+
+func (m *Model) prepareItemCmd(name string, index int) tea.Cmd {
+	if m.browser == nil || m.store == nil || m.navigating {
+		return nil
+	}
+	clone, st := m.browser.Clone(), m.store
+	token := m.queryID
+	m.navID++
+	navID := m.navID
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(m.prefs.QueryTimeout())*time.Second)
+	m.cancelNav()
+	m.navCancel, m.navigating, m.browsePreparing = cancel, true, true
+	return tea.Batch(func() tea.Msg {
+		item, err := clone.PrepareItem(ctx, name, st)
+		return preparedDoneMsg{token: token, navID: navID, err: err, b: clone, item: item, index: index}
+	}, m.spinner.Tick)
+}
+
+func (m *Model) reloadActiveCmd() tea.Cmd {
+	if m.browser == nil || m.store == nil || m.browser.ActiveTable == "" || m.navigating {
+		return nil
+	}
+	clone, st, name := m.browser.Clone(), m.store, m.browser.ActiveTable
+	m.browseTargetIndex = 0
+	for i, candidate := range clone.Tables {
+		if candidate == name {
+			m.browseTargetIndex = i
+			break
+		}
+	}
+	m.browsePreviousIndex = m.browseTargetIndex
+	m.browseRefreshCurrent = true
+	token := m.queryID
+	m.navID++
+	navID := m.navID
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(m.prefs.QueryTimeout())*time.Second)
+	m.cancelNav()
+	m.navCancel, m.navigating, m.browsePreparing = cancel, true, true
+	return tea.Batch(func() tea.Msg {
+		if err := clone.Load(ctx, st); err != nil {
+			return preparedDoneMsg{token: token, navID: navID, err: err}
+		}
+		item, err := clone.PrepareItem(ctx, name, st)
+		index := 0
+		for i, candidate := range clone.Tables {
+			if candidate == name {
+				index = i
+				break
 			}
-			if len(b.Items) > 0 {
-				item, err := b.PrepareItem(ctx, b.Items[0].Name, st)
-				if err != nil {
-					return browserDoneMsg{token: token, err: err, load: true}
-				}
-				if err := b.OpenPrepared(ctx, item, store.BrowseOptions{}, pageSize, st); err != nil {
-					return browserDoneMsg{token: token, err: err, load: true}
-				}
-			}
-			return browserDoneMsg{token: token, b: b, load: true}
-		},
-		m.spinner.Tick,
-	)
+		}
+		return preparedDoneMsg{token: token, navID: navID, err: err, b: clone, item: item, index: index}
+	}, m.spinner.Tick)
 }
 
 // cancelNav cancels a running browser navigation, if any.

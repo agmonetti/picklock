@@ -1,6 +1,9 @@
 package tui
 
 import (
+	"bytes"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -8,6 +11,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/agmonetti/picklock/internal/browser"
+	"github.com/agmonetti/picklock/internal/prefs"
 	"github.com/agmonetti/picklock/internal/store"
 )
 
@@ -170,5 +174,69 @@ func TestIncompleteGraphEdgesBlockWholeDetailCopy(t *testing.T) {
 	}
 	if got := ansi.Strip(m.renderActiveDetail(120, 30)); !strings.Contains(got, "INCOMPLETE") {
 		t.Fatalf("graph edge incompleteness not visible: %q", got)
+	}
+}
+
+func TestSpooledCellCopyLimitAndFileSave(t *testing.T) {
+	oldClipboard := clipboardWriteAll
+	var copied string
+	clipboardWriteAll = func(text string) error { copied = text; return nil }
+	t.Cleanup(func() { clipboardWriteAll = oldClipboard })
+
+	source, err := os.CreateTemp(t.TempDir(), "spooled")
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := []byte("complete-content")
+	if _, err := source.Write(payload); err != nil {
+		t.Fatal(err)
+	}
+	m := &Model{detailCursor: 0, detailCols: []string{"payload"}, detailCellFile: source,
+		detailCellSize: int64(len(payload)), prefs: prefs.Default()}
+	m.copyDetailValue()
+	if copied != string(payload) {
+		t.Fatalf("copied = %q, want full spooled bytes", copied)
+	}
+
+	m.prefs.EditorMaxCellBytes = len(payload) - 1
+	copied = ""
+	m.copyDetailValue()
+	if copied != "" || !strings.Contains(m.err, "save it to a file") {
+		t.Fatalf("over-limit clipboard copy = %q, error %q", copied, m.err)
+	}
+
+	dest := filepath.Join(t.TempDir(), "nested", "saved.bin")
+	m.prefs.EditorMaxCellBytes = 1
+	m.exportInput.SetValue(dest)
+	m.detailSaving = true
+	_, _ = m.handleDetailSaveKeys(tea.KeyMsg{Type: tea.KeyEnter})
+	got, err := os.ReadFile(dest)
+	if err != nil || !bytes.Equal(got, payload) {
+		t.Fatalf("saved bytes = %q, err=%v; want %q", got, err, payload)
+	}
+	_ = source.Close()
+}
+
+func TestPageExportRejectsIncompleteCells(t *testing.T) {
+	m := &Model{browser: &browser.Browser{ActiveTable: "heavy", Data: &store.TabularData{
+		Columns: []string{"payload"}, Rows: [][]string{{"prefix"}}, Affected: -1,
+		Incomplete: map[store.CellPosition]store.IncompleteCell{{Row: 0, Column: 0}: {State: store.CellDeferred}},
+	}}}
+	_, _, err := m.exportSource()
+	if err == nil || !strings.Contains(err.Error(), "deferred cells or previews") {
+		t.Fatalf("exportSource error = %v, want explicit incomplete-page explanation", err)
+	}
+}
+
+func TestQuitRemovesSpooledCellFile(t *testing.T) {
+	file, err := os.CreateTemp("", "picklock-cell-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	name := file.Name()
+	m := &Model{showDetail: true, detailCellFile: file, detailCellSize: 1}
+	_, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+	if _, err := os.Stat(name); !os.IsNotExist(err) {
+		t.Fatalf("spooled temp still exists after quit: stat err=%v", err)
 	}
 }

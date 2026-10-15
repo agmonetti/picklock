@@ -48,6 +48,9 @@ func (m *Model) exportSource() (store.DataView, string, error) {
 	if b == nil || b.ActiveTable == "" || b.Data == nil || b.Data.IsEmpty() {
 		return nil, "", fmt.Errorf("nothing to export — open an item first")
 	}
+	if tab, ok := b.Data.(*store.TabularData); ok && len(tab.Incomplete) != 0 {
+		return nil, "", fmt.Errorf("cannot export this page: it contains deferred cells or previews; narrow the selected columns to complete fields and retry")
+	}
 	return b.Data, b.Data.Summary(), nil
 }
 

@@ -54,9 +54,9 @@ func (m *Model) handleWorkspaceKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.setFocus(screens.FocusMain)
 		return m, nil
 	case !typingEditor && key.Matches(msg, m.keys.Refresh) && m.browser != nil:
-		return m, m.runBrowserOp(func(b *browser.Browser, st store.DataSource, ctx context.Context) error {
-			return b.Reload(ctx, st)
-		})
+		return m, m.prepareActive(false)
+	case !typingEditor && key.Matches(msg, m.keys.BrowseOptions) && m.browser != nil:
+		return m, m.prepareActive(true)
 	case !m.loading && !m.navigating && key.Matches(msg, m.keys.Export):
 		return m, m.openExport()
 	}
@@ -235,9 +235,6 @@ func (m *Model) handleSidebarKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case msg.Type == tea.KeyEnter:
-		m.maximized = false
-		m.showMain = true
-		m.setFocus(screens.FocusMain)
 		return m, m.selectTable(m.sidebarCursor)
 	case msg.Type == tea.KeyRunes && !msg.Alt && len(msg.Runes) == 1 &&
 		msg.Runes[0] >= '1' && msg.Runes[0] <= '9':
@@ -247,23 +244,40 @@ func (m *Model) handleSidebarKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// selectTable opens the item at index idx in the sidebar.
+// selectTable prepares metadata before any row fetch.
 func (m *Model) selectTable(idx int) tea.Cmd {
 	if m.browser == nil || idx < 0 || idx >= len(m.browser.Tables) {
 		return nil
 	}
-	m.sidebarCursor = idx
-	m.structure = false
-	m.structureScroll = 0
-	m.colScroll = 0 // reset horizontal scroll when opening a new table
-	name := m.browser.Tables[idx]
-	pageSize := m.prefs.BrowsePageSize
-	return m.runBrowserOp(func(b *browser.Browser, st store.DataSource, ctx context.Context) error {
-		if name != b.ActiveTable {
-			b.PageSize = pageSize
+	m.browsePreviousIndex = m.sidebarCursor
+	for i, name := range m.browser.Tables {
+		if name == m.browser.ActiveTable {
+			m.browsePreviousIndex = i
+			break
 		}
-		return b.SelectItem(ctx, name, st)
-	})
+	}
+	m.browseTargetIndex = idx
+	m.browseForceOptions = false
+	m.browseRefreshCurrent = false
+	return m.prepareItemCmd(m.browser.Tables[idx], idx)
+}
+
+func (m *Model) prepareActive(forceOptions bool) tea.Cmd {
+	if m.browser == nil || m.browser.ActiveTable == "" {
+		return nil
+	}
+	idx := 0
+	for i, name := range m.browser.Tables {
+		if name == m.browser.ActiveTable {
+			idx = i
+			break
+		}
+	}
+	m.browseTargetIndex = idx
+	m.browsePreviousIndex = idx
+	m.browseForceOptions = forceOptions
+	m.browseRefreshCurrent = !forceOptions
+	return m.prepareItemCmd(m.browser.ActiveTable, idx)
 }
 
 // clampSidebar keeps the sidebar cursor inside the item list.

@@ -16,6 +16,7 @@ type KeyMap struct {
 	Switch         key.Binding
 	Inspect        key.Binding
 	Detail         key.Binding
+	BrowseOptions  key.Binding
 	Refresh        key.Binding
 	Execute        key.Binding
 	ClearInput     key.Binding
@@ -54,6 +55,7 @@ func DefaultKeyMap() KeyMap {
 		Switch:         key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "next pane")),
 		Inspect:        key.NewBinding(key.WithKeys("i"), key.WithHelp("i", "structure")),
 		Detail:         key.NewBinding(key.WithKeys("v"), key.WithHelp("v", "row detail")),
+		BrowseOptions:  key.NewBinding(key.WithKeys("o"), key.WithHelp("o", "browse options")),
 		Refresh:        key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "refresh")),
 		Execute:        key.NewBinding(key.WithKeys("ctrl+r"), key.WithHelp("ctrl+r", "run")),
 		ClearInput:     key.NewBinding(key.WithKeys("ctrl+l"), key.WithHelp("ctrl+l", "clear")),
@@ -91,6 +93,6 @@ func (k KeyMap) ShortHelp() []key.Binding {
 func (k KeyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Quit, k.NewSession, k.Switch, k.Settings, k.FocusSidebar, k.FocusMain, k.FocusEditor},
-		{k.ToggleSidebar, k.ToggleMain, k.ToggleEditor, k.ZoomPane, k.Help, k.Back, k.Inspect, k.Detail, k.Refresh, k.Execute, k.ClearInput, k.Export, k.CopyQuery, k.ScrollColLeft, k.ScrollColRight},
+		{k.ToggleSidebar, k.ToggleMain, k.ToggleEditor, k.ZoomPane, k.Help, k.Back, k.Inspect, k.Detail, k.BrowseOptions, k.Refresh, k.Execute, k.ClearInput, k.Export, k.CopyQuery, k.ScrollColLeft, k.ScrollColRight},
 	}
 }
