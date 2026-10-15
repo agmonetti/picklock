@@ -293,6 +293,22 @@ func (s *Store) QueryContextMax(ctx context.Context, sql string, max int) (*stor
 	return store.ScanResultMax(rows, max)
 }
 
+func (s *Store) QueryContextLimits(ctx context.Context, sql string, limits store.QueryLimits) (*store.Result, error) {
+	rows, err := s.db.QueryContext(ctx, sql)
+	if err != nil {
+		return nil, err
+	}
+	res, scanErr := store.ScanResultLimits(rows, limits)
+	closeErr := rows.Close()
+	if scanErr != nil {
+		return nil, scanErr
+	}
+	if closeErr != nil {
+		return nil, closeErr
+	}
+	return res, nil
+}
+
 // Exec runs SQL without a result (INSERT/UPDATE/DELETE) and returns affected rows.
 func (s *Store) Exec(sql string) (int64, error) {
 	return s.ExecContext(context.Background(), sql)

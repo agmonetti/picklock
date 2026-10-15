@@ -256,10 +256,36 @@ func TestEditor_ResultTruncatedOverLimit(t *testing.T) {
 	}
 	tab, ok := e.Data.(*store.TabularData)
 	if !ok || !tab.Truncated {
-		t.Errorf("tab.Truncated = %v, want true", tab)
+		t.Fatalf("tab.Truncated = %v, want true", tab)
 	}
 	if len(tab.Rows) != limits.MaxRows {
 		t.Errorf("Rows = %d, want %d", len(tab.Rows), limits.MaxRows)
+	}
+	if tab.Status.Reason != store.LimitRows || tab.Status.RetainedItems != limits.MaxRows || tab.Status.RetainedBytes != 6 {
+		t.Errorf("Status = %+v, want row cutoff with 3 items/6 bytes", tab.Status)
+	}
+}
+
+func TestEditor_CellBudgetPreservesSQLAndMarksPreview(t *testing.T) {
+	st := newTestStore(t)
+	limits := store.QueryLimits{MaxRows: 2, MaxCellBytes: 3, MaxResultBytes: 8}
+	e := New()
+	e.Buffer = "SELECT 'éé' AS value; SELECT 'ignored'"
+	if err := e.ExecuteAt(context.Background(), st, 0, limits); err != nil {
+		t.Fatalf("ExecuteAt: %v", err)
+	}
+	tab, ok := e.Data.(*store.TabularData)
+	if !ok || !tab.Truncated || tab.Status.Reason != store.LimitCellBytes {
+		t.Fatalf("result = %+v, want cell cutoff", e.Data)
+	}
+	if e.LastQuery != "SELECT 'éé' AS value" {
+		t.Errorf("LastQuery = %q; SQL was rewritten or wrong statement selected", e.LastQuery)
+	}
+	if tab.Rows[0][0] != "é" || tab.Status.RetainedItems != 1 || tab.Status.RetainedBytes != 2 {
+		t.Errorf("retained result = rows %q, status %+v", tab.Rows, tab.Status)
+	}
+	if incomplete, ok := tab.Incomplete[store.CellPosition{Row: 0, Column: 0}]; !ok || incomplete.SizeBytes == nil || *incomplete.SizeBytes != 4 {
+		t.Errorf("incomplete cell = %+v, present=%v; want original size 4", incomplete, ok)
 	}
 }
 

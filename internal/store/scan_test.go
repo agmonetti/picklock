@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"strconv"
 	"testing"
 	"time"
 
@@ -131,5 +132,130 @@ func TestScanResultMaxCapsRows(t *testing.T) {
 	}
 	if len(res3.Rows) != 5 || res3.Truncated {
 		t.Errorf("over-limit: Rows=%d Truncated=%v, want 5/false", len(res3.Rows), res3.Truncated)
+	}
+}
+
+func TestScanResultLimitsRetention(t *testing.T) {
+	tests := []struct {
+		name           string
+		query          string
+		limits         QueryLimits
+		wantReason     LimitReason
+		wantRows       int
+		wantBytes      int64
+		wantFirst      string
+		wantIncomplete bool
+		incompleteCol  int
+	}{
+		{"large multibyte cell", `SELECT 'éé'`, QueryLimits{MaxRows: 4, MaxCellBytes: 3, MaxResultBytes: 8}, LimitCellBytes, 1, 2, "é", true, 0},
+		{"result budget cuts first row", `SELECT 'ab', 'cd'`, QueryLimits{MaxRows: 4, MaxCellBytes: 3, MaxResultBytes: 3}, LimitResultBytes, 1, 3, "ab", true, 1},
+		{"many small rows", `SELECT 'a' UNION ALL SELECT 'b' UNION ALL SELECT 'c'`, QueryLimits{MaxRows: 2, MaxCellBytes: 4, MaxResultBytes: 8}, LimitRows, 2, 2, "a", false, 0},
+		{"exact budget", `SELECT 'abc'`, QueryLimits{MaxRows: 4, MaxCellBytes: 3, MaxResultBytes: 3}, "", 1, 3, "abc", false, 0},
+		{"binary formatting bounded", `SELECT X'00FF10'`, QueryLimits{MaxRows: 4, MaxCellBytes: 6, MaxResultBytes: 8}, LimitCellBytes, 1, 6, "0x00ff", true, 0},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			db, err := sql.Open("sqlite", ":memory:")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer db.Close()
+			rows, err := db.QueryContext(context.Background(), tc.query)
+			if err != nil {
+				t.Fatal(err)
+			}
+			res, err := ScanResultLimits(rows, tc.limits)
+			closeErr := rows.Close()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if closeErr != nil {
+				t.Fatal(closeErr)
+			}
+			if len(res.Rows) != tc.wantRows || res.Status.Reason != tc.wantReason || res.Status.RetainedBytes != tc.wantBytes {
+				t.Fatalf("result rows=%d status=%+v, want rows=%d reason=%q bytes=%d", len(res.Rows), res.Status, tc.wantRows, tc.wantReason, tc.wantBytes)
+			}
+			if res.Rows[0][0] != tc.wantFirst {
+				t.Errorf("first cell=%q, want %q", res.Rows[0][0], tc.wantFirst)
+			}
+			cell, incomplete := res.Incomplete[CellPosition{Row: 0, Column: tc.incompleteCol}]
+			if incomplete != tc.wantIncomplete {
+				t.Errorf("incomplete=%v, want %v", incomplete, tc.wantIncomplete)
+			}
+			if incomplete && (cell.SizeBytes == nil || *cell.SizeBytes == 0) {
+				t.Errorf("incomplete metadata = %+v, want original size", cell)
+			}
+			if res.Truncated != (tc.wantReason != "") {
+				t.Errorf("truncated=%v, want %v", res.Truncated, tc.wantReason != "")
+			}
+		})
+	}
+}
+
+func TestScanResultLimitsMarksSkippedSuffixAndNulls(t *testing.T) {
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	rows, err := db.QueryContext(context.Background(), `SELECT 'heavy', 'tail', NULL`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, scanErr := ScanResultLimits(rows, QueryLimits{MaxRows: 2, MaxCellBytes: 3, MaxResultBytes: 8})
+	closeErr := rows.Close()
+	if scanErr != nil {
+		t.Fatal(scanErr)
+	}
+	if closeErr != nil {
+		t.Fatal(closeErr)
+	}
+	if res.Rows[0][0] != "hea" || !res.Nulls[0][2] {
+		t.Fatalf("row/nulls = %q/%v, want bounded prefix and authoritative NULL", res.Rows[0], res.Nulls[0])
+	}
+	if cell := res.Incomplete[CellPosition{Row: 0, Column: 1}]; cell.State != CellDeferred {
+		t.Fatalf("unretained suffix cell = %+v, want deferred", cell)
+	}
+}
+
+// BenchmarkScanResultLimitsDriverSQLite measures allocations made while the
+// SQLite driver fetches an oversized value and the executor closes the cursor.
+func BenchmarkScanResultLimitsDriverSQLite(b *testing.B) {
+	for _, size := range []int{128 << 10, 1 << 20, 8 << 20} {
+		b.Run(strconv.Itoa(size), func(b *testing.B) {
+			db, err := sql.Open("sqlite", ":memory:")
+			if err != nil {
+				b.Fatal(err)
+			}
+			defer db.Close()
+			db.SetMaxOpenConns(1)
+			query := "SELECT zeroblob(" + strconv.Itoa(size) + ")"
+			limits := QueryLimits{MaxRows: 1, MaxCellBytes: 64 << 10, MaxResultBytes: 64 << 10}
+			var closeNanos int64
+
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				rows, err := db.QueryContext(context.Background(), query)
+				if err != nil {
+					b.Fatal(err)
+				}
+				result, scanErr := ScanResultLimits(rows, limits)
+				startClose := time.Now()
+				closeErr := rows.Close()
+				closeNanos += time.Since(startClose).Nanoseconds()
+				if scanErr != nil {
+					b.Fatal(scanErr)
+				}
+				if closeErr != nil {
+					b.Fatal(closeErr)
+				}
+				if result.Status.Reason != LimitCellBytes || result.Status.RetainedBytes != 64<<10 {
+					b.Fatalf("status = %+v, want cell cutoff at 64 KiB", result.Status)
+				}
+			}
+			b.StopTimer()
+			b.ReportMetric(float64(closeNanos)/float64(b.N), "close-ns/op")
+		})
 	}
 }

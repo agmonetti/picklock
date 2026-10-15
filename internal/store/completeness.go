@@ -60,9 +60,9 @@ func ResultCutoffSummary(data DataView) string {
 		return ""
 	}
 	if status.Reason == "" {
-		return fmt.Sprintf("result truncated (%s); retained %d items", LimitRows, retained)
+		return fmt.Sprintf("filter/select less; cutoff (%s); %d items", LimitRows, retained)
 	}
-	return fmt.Sprintf("result truncated (%s); retained %d items, %d content bytes", status.Reason, status.RetainedItems, status.RetainedBytes)
+	return fmt.Sprintf("filter/select less; cutoff (%s); %d items; %d B", status.Reason, status.RetainedItems, status.RetainedBytes)
 }
 
 // IncompletenessSummary distinguishes incomplete content from a complete page.

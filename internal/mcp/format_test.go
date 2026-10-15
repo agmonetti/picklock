@@ -63,8 +63,8 @@ func TestFormatEmptyCutoffsRemainExplicit(t *testing.T) {
 	}
 	for _, data := range cases {
 		got := formatDataView(data, false, -1, 0)
-		if !strings.Contains(got, "INCOMPLETE") || !strings.Contains(got, string(store.LimitResultBytes)) || !strings.Contains(got, "retained 0 items") {
-			t.Errorf("%T hides empty cutoff: %q", data, got)
+		if !strings.Contains(got, "INCOMPLETE") || !strings.Contains(got, string(store.LimitResultBytes)) || !strings.Contains(got, "0 items") || !strings.Contains(got, "0 B") {
+			t.Errorf("%T hides empty cutoff or retained-byte count: %q", data, got)
 		}
 	}
 	legacy := formatDataView(&store.TabularData{Affected: -1, Truncated: true}, false, -1, 0)

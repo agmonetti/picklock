@@ -275,9 +275,10 @@ renderers derive labels without inserting them into the source payload.
 `RowRefs` hold optional opaque native PK/unique-not-null identities, independent
 of visible strings. References own their key bytes and survive scan-buffer
 reuse; `RowRef` safely returns nil when identity is unavailable. `CellReader`
-is optional and currently has no implementing driver: E5 must provide real,
-consistent, bounded server reads, not fake methods on every source. Its request
-requires identity, a column and a positive block size; NULL has no reader.
+is optional. SQLite implements a real bounded server reader under a read
+transaction; other SQL drivers are being added in E5. Non-relational sources do
+not declare fake methods. Requests require identity, a column and a positive
+block size; NULL has no reader.
 
 
 ---

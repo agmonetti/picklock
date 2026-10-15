@@ -51,6 +51,7 @@ type Result struct {
 	Nulls      [][]bool
 	Incomplete map[CellPosition]IncompleteCell
 	RowRefs    []*RowReference
+	Status     ResultStatus
 }
 
 // --- Multi-Paradigm DataView Results ---
@@ -382,6 +383,7 @@ type Store interface {
 	QueryContext(ctx context.Context, sql string) (*Result, error)
 	ExecContext(ctx context.Context, sql string) (int64, error)
 	QueryContextMax(ctx context.Context, sql string, max int) (*Result, error)
+	QueryContextLimits(ctx context.Context, sql string, limits QueryLimits) (*Result, error)
 
 	CountTable(table string) (int, error)
 	SelectTablePage(table string, limit, offset int) (*Result, error)

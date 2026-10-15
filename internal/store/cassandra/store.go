@@ -8,8 +8,10 @@ import (
 	"fmt"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/gocql/gocql"
 
@@ -383,9 +385,8 @@ func (e *CassandraExecutor) schemaColumnsFor(ctx context.Context, stmt string) [
 	return names
 }
 
-// Execute runs a CQL statement. The cursor line is unused; limits.MaxRows caps
-// reads because gocql otherwise iterates every server page.
-// Byte budgets are a shared contract only until E6 enforces them.
+// Execute runs a CQL statement. The cursor line is unused; limits cap retained
+// rows and rendered content while the iterator is closed on every read path.
 func (e *CassandraExecutor) Execute(ctx context.Context, buffer string, _line int, limits store.QueryLimits) (store.DataView, error) {
 	if err := limits.Validate(); err != nil {
 		return nil, err
@@ -405,32 +406,31 @@ func (e *CassandraExecutor) Execute(ctx context.Context, buffer string, _line in
 		if err != nil {
 			return nil, err
 		}
-		return &store.TabularData{
-			Affected: 0,
-		}, nil
+		return &store.TabularData{Affected: 0}, nil
 	}
 
-	pageSize := limits.MaxRows
-
-	iter := e.source.session.Query(trimmed).WithContext(ctx).PageSize(pageSize).Iter()
+	iter := e.source.session.Query(trimmed).WithContext(ctx).PageSize(limits.MaxRows).Iter()
 	cols := make([]string, len(iter.Columns()))
 	for i, c := range iter.Columns() {
 		cols[i] = c.Name
 	}
 	if len(cols) == 0 {
-		// Empty result without column metadata (e.g. SELECT * on a table with
-		// no rows): derive the header from the schema. CQL SELECTs reference a
-		// single table, so the FROM target is unambiguous.
 		if sc := e.schemaColumnsFor(ctx, trimmed); sc != nil {
 			cols = sc
 		}
 	}
 
-	var rows [][]string
-	truncated := false
+	data := &store.TabularData{
+		Columns: cols, Affected: -1, TotalRows: -1,
+	}
+	var retainedBytes int64
 	for {
-		if len(rows) >= limits.MaxRows {
-			truncated = true
+		if len(data.Rows) >= limits.MaxRows {
+			rowMap := make(map[string]interface{})
+			if iter.MapScan(rowMap) {
+				data.Truncated = true
+				data.Status = store.ResultStatus{Reason: store.LimitRows, RetainedItems: len(data.Rows), RetainedBytes: retainedBytes}
+			}
 			break
 		}
 		rowMap := make(map[string]interface{})
@@ -438,26 +438,124 @@ func (e *CassandraExecutor) Execute(ctx context.Context, buffer string, _line in
 			break
 		}
 		row := make([]string, len(cols))
+		rowNulls := make([]bool, len(cols))
+		rowBytes := int64(0)
+		rowReason := store.LimitReason("")
 		for i, c := range cols {
 			val := rowMap[c]
-			if val != nil {
-				row[i] = fmt.Sprint(val)
-			} else {
-				row[i] = ""
+			if val == nil {
+				rowNulls[i] = true
+				continue
 			}
+			remaining := int64(limits.MaxResultBytes) - retainedBytes - rowBytes
+			cellCap := limits.MaxCellBytes
+			reason := store.LimitCellBytes
+			if remaining < int64(cellCap) {
+				cellCap = int(remaining)
+				reason = store.LimitResultBytes
+			}
+			var text string
+			var fullBytes int64
+			preTruncated := false
+			switch native := val.(type) {
+			case string:
+				text = native
+				fullBytes = int64(len(native))
+			case []byte:
+				text, fullBytes, preTruncated = cassandraByteSliceText(native, cellCap)
+			default:
+				text = fmt.Sprint(val)
+				fullBytes = int64(len(text))
+			}
+			if preTruncated || len(text) > cellCap {
+				end := len(text)
+				if end > cellCap {
+					end = cellCap
+					for end > 0 && !utf8.RuneStart(text[end]) {
+						end--
+					}
+				}
+				row[i] = text[:end]
+				rowBytes += int64(end)
+				data.Truncated = true
+				rowReason = reason
+				if data.Incomplete == nil {
+					data.Incomplete = make(map[store.CellPosition]store.IncompleteCell)
+				}
+				data.Incomplete[store.CellPosition{Row: len(data.Rows), Column: i}] = store.IncompleteCell{
+					State: store.CellPreview, Type: fmt.Sprintf("%T", val), SizeBytes: &fullBytes,
+				}
+				for skipped := i + 1; skipped < len(cols); skipped++ {
+					if skippedVal := rowMap[cols[skipped]]; skippedVal != nil {
+						data.Incomplete[store.CellPosition{Row: len(data.Rows), Column: skipped}] = store.IncompleteCell{
+							State: store.CellDeferred, Type: fmt.Sprintf("%T", skippedVal),
+						}
+					}
+				}
+				break
+			}
+			row[i] = text
+			rowBytes += int64(len(text))
 		}
-		rows = append(rows, row)
+		data.Rows = append(data.Rows, row)
+		data.Nulls = append(data.Nulls, rowNulls)
+		retainedBytes += rowBytes
+		if rowReason != "" {
+			data.Status = store.ResultStatus{Reason: rowReason, RetainedItems: len(data.Rows), RetainedBytes: retainedBytes}
+			break
+		}
 	}
-
 	if err := iter.Close(); err != nil {
 		return nil, err
 	}
-
-	return &store.TabularData{
-		Columns:   cols,
-		Rows:      rows,
-		Affected:  -1, // read query
-		TotalRows: -1,
-		Truncated: truncated,
-	}, nil
+	if data.Truncated && data.Status.Reason == "" {
+		data.Status = store.ResultStatus{Reason: store.LimitRows, RetainedItems: len(data.Rows), RetainedBytes: retainedBytes}
+	}
+	if !data.Truncated {
+		data.Status = store.ResultStatus{RetainedItems: len(data.Rows), RetainedBytes: retainedBytes}
+	}
+	return data, nil
+}
+func cassandraByteSliceText(value []byte, maxBytes int) (string, int64, bool) {
+	size := int64(2)
+	for i, b := range value {
+		if i > 0 {
+			size++
+		}
+		switch {
+		case b >= 100:
+			size += 3
+		case b >= 10:
+			size += 2
+		default:
+			size++
+		}
+	}
+	if size <= int64(maxBytes) {
+		return fmt.Sprint(value), size, false
+	}
+	var out strings.Builder
+	out.Grow(maxBytes)
+	appendPart := func(part string) {
+		remaining := maxBytes - out.Len()
+		if remaining > 0 {
+			if len(part) > remaining {
+				part = part[:remaining]
+			}
+			out.WriteString(part)
+		}
+	}
+	appendPart("[")
+	for i, b := range value {
+		if i > 0 {
+			appendPart(" ")
+		}
+		var digits [3]byte
+		appendPart(string(strconv.AppendInt(digits[:0], int64(b), 10)))
+		if out.Len() >= maxBytes {
+			break
+		}
+	}
+	appendPart("]")
+	return out.String(), size, true
 }

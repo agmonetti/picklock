@@ -344,9 +344,7 @@ func (e *MongoExecutor) IsMutation(stmt string) bool {
 
 var mqlCallPattern = regexp.MustCompile(`(?i)^db\.([a-zA-Z0-9_\-\.]+)\.([a-zA-Z0-9_]+)\s*\(([\s\S]*)\)\s*;?$`)
 
-// Execute runs a MongoDB MQL statement against the store. The cursor line is
-// ignored for this single-statement language; limits.MaxRows caps find results.
-// Byte budgets are a shared contract only until E6 enforces them.
+// Execute runs a MongoDB MQL statement against the store.
 func (e *MongoExecutor) Execute(ctx context.Context, buffer string, _line int, limits store.QueryLimits) (store.DataView, error) {
 	if err := limits.Validate(); err != nil {
 		return nil, err
@@ -360,15 +358,10 @@ func (e *MongoExecutor) Execute(ctx context.Context, buffer string, _line int, l
 		return nil, errors.New("mutations are blocked in read-only mode")
 	}
 
-	// 1. Check for db.collection.method(...) syntax
 	if m := mqlCallPattern.FindStringSubmatch(trimmed); len(m) == 4 {
-		collName := m[1]
-		method := strings.ToLower(m[2])
-		argsRaw := strings.TrimSpace(m[3])
-		return e.executeMQLCall(ctx, collName, method, argsRaw, limits.MaxRows)
+		return e.executeMQLCall(ctx, m[1], strings.ToLower(m[2]), strings.TrimSpace(m[3]), limits)
 	}
 
-	// 2. Check for raw JSON command: e.g. {"find": "users", "filter": {...}}
 	if strings.HasPrefix(trimmed, "{") {
 		var doc bson.D
 		if err := bson.UnmarshalExtJSON([]byte(trimmed), true, &doc); err != nil {
@@ -378,23 +371,28 @@ func (e *MongoExecutor) Execute(ctx context.Context, buffer string, _line int, l
 		if err := e.source.database.RunCommand(ctx, doc).Decode(&res); err != nil {
 			return nil, fmt.Errorf("command execution error: %w", err)
 		}
-		jsonBytes, _ := json.MarshalIndent(res, "", "  ")
-		return &store.DocumentData{
-			Documents: []store.DocumentItem{
-				{
-					ID:      "command_result",
-					RawJSON: string(jsonBytes),
-					Summary: "Command Result",
-				},
-			},
-			TotalDocs: 1,
-		}, nil
+		jsonBytes, err := json.MarshalIndent(res, "", "  ")
+		if err != nil {
+			return nil, fmt.Errorf("render command result: %w", err)
+		}
+		item := store.DocumentItem{ID: "command_result", RawJSON: string(jsonBytes), Summary: "Command Result"}
+		status := store.ResultStatus{RetainedItems: 1, RetainedBytes: int64(len(jsonBytes))}
+		if int64(len(jsonBytes)) > int64(limits.MaxCellBytes) || int64(len(jsonBytes)) > int64(limits.MaxResultBytes) {
+			status.Reason = mongoByteLimitReason(limits.MaxCellBytes, int64(limits.MaxResultBytes))
+			item = store.DocumentItem{}
+			status.RetainedItems, status.RetainedBytes = 0, 0
+		}
+		result := &store.DocumentData{TotalDocs: 1, Status: status}
+		if item.RawJSON != "" {
+			result.Documents = []store.DocumentItem{item}
+		}
+		return result, nil
 	}
 
 	return nil, fmt.Errorf("unsupported MongoDB syntax; use db.<collection>.find({...}) or a JSON command")
 }
 
-func (e *MongoExecutor) executeMQLCall(ctx context.Context, collName, method, argsRaw string, maxRows int) (store.DataView, error) {
+func (e *MongoExecutor) executeMQLCall(ctx context.Context, collName, method, argsRaw string, limits store.QueryLimits) (store.DataView, error) {
 	coll := e.source.database.Collection(collName)
 
 	switch method {
@@ -404,34 +402,54 @@ func (e *MongoExecutor) executeMQLCall(ctx context.Context, collName, method, ar
 			return nil, fmt.Errorf("invalid find filter JSON: %w", err)
 		}
 
-		findLimit := int64(maxRows)
-		findOpts := options.Find().SetLimit(findLimit).SetSkip(0)
-
+		findOpts := options.Find().SetLimit(int64(limits.MaxRows + 1)).SetSkip(0)
 		cur, err := coll.Find(ctx, filterDoc, findOpts)
 		if err != nil {
 			return nil, fmt.Errorf("find: %w", err)
 		}
-		defer cur.Close(ctx)
-
+		closed := false
+		defer func() {
+			if !closed {
+				_ = cur.Close(ctx)
+			}
+		}()
 		var docs []store.DocumentItem
+		var retained int64
+		status := store.ResultStatus{}
 		for cur.Next(ctx) {
+			if len(docs) >= limits.MaxRows {
+				status.Reason = store.LimitRows
+				break
+			}
 			var doc bson.M
 			if err := cur.Decode(&doc); err != nil {
-				continue
+				return nil, fmt.Errorf("decode find result: %w", err)
 			}
-			idStr := extractDocID(doc)
-			jsonBytes, _ := json.MarshalIndent(doc, "", "  ")
-			summary := buildDocSummary(doc)
+			jsonBytes, err := json.MarshalIndent(doc, "", "  ")
+			if err != nil {
+				return nil, fmt.Errorf("render find result: %w", err)
+			}
+			remaining := int64(limits.MaxResultBytes) - retained
+			if int64(len(jsonBytes)) > int64(limits.MaxCellBytes) || int64(len(jsonBytes)) > remaining {
+				status.Reason = mongoByteLimitReason(limits.MaxCellBytes, remaining)
+				break
+			}
 			docs = append(docs, store.DocumentItem{
-				ID:      idStr,
-				RawJSON: string(jsonBytes),
-				Summary: summary,
+				ID: extractDocID(doc), RawJSON: string(jsonBytes), Summary: buildDocSummary(doc),
 			})
+			retained += int64(len(jsonBytes))
 		}
-		return &store.DocumentData{
-			Documents: docs,
-			TotalDocs: int64(len(docs)),
-		}, nil
+		if err := cur.Err(); err != nil {
+			return nil, fmt.Errorf("find: %w", err)
+		}
+		if err := cur.Close(ctx); err != nil {
+			closed = true
+			return nil, fmt.Errorf("close find cursor: %w", err)
+		}
+		closed = true
+		status.RetainedItems = len(docs)
+		status.RetainedBytes = retained
+		return &store.DocumentData{Documents: docs, TotalDocs: -1, Status: status}, nil
 
 	case "countdocuments", "count":
 		filterDoc, err := parseMQLDoc(argsRaw)
@@ -442,12 +460,21 @@ func (e *MongoExecutor) executeMQLCall(ctx context.Context, collName, method, ar
 		if err != nil {
 			return nil, fmt.Errorf("count: %w", err)
 		}
-		return &store.TabularData{
-			Columns:   []string{"count"},
-			Rows:      [][]string{{strconv.FormatInt(count, 10)}},
-			Affected:  -1, // read query
-			TotalRows: -1,
-		}, nil
+		value := strconv.FormatInt(count, 10)
+		result := &store.TabularData{Columns: []string{"count"}, Affected: -1, TotalRows: -1}
+		status := store.ResultStatus{RetainedItems: 1, RetainedBytes: int64(len(value))}
+		if len(value) > limits.MaxCellBytes {
+			status.Reason = store.LimitCellBytes
+		} else if len(value) > limits.MaxResultBytes {
+			status.Reason = store.LimitResultBytes
+		} else {
+			result.Rows = [][]string{{value}}
+		}
+		if status.Reason != "" {
+			status.RetainedItems, status.RetainedBytes = 0, 0
+		}
+		result.Status = status
+		return result, nil
 
 	case "insertone":
 		if e.source.readOnly {
@@ -461,11 +488,17 @@ func (e *MongoExecutor) executeMQLCall(ctx context.Context, collName, method, ar
 		if err != nil {
 			return nil, fmt.Errorf("insert: %w", err)
 		}
-		return &store.TabularData{
-			Columns:  []string{"inserted_id"},
-			Rows:     [][]string{{fmt.Sprint(res.InsertedID)}},
-			Affected: 1,
-		}, nil
+		value := fmt.Sprint(res.InsertedID)
+		result := &store.TabularData{Columns: []string{"inserted_id"}, Affected: 1}
+		status := store.ResultStatus{RetainedItems: 1, RetainedBytes: int64(len(value))}
+		if len(value) > limits.MaxCellBytes {
+			status.Reason = store.LimitCellBytes
+			status.RetainedItems, status.RetainedBytes = 0, 0
+		} else {
+			result.Rows = [][]string{{value}}
+		}
+		result.Status = status
+		return result, nil
 
 	case "deleteone", "deletemany":
 		if e.source.readOnly {
@@ -708,4 +741,10 @@ func inferBSONType(v any) string {
 	default:
 		return fmt.Sprintf("%T", v)
 	}
+}
+func mongoByteLimitReason(cellLimit int, remaining int64) store.LimitReason {
+	if remaining < int64(cellLimit) {
+		return store.LimitResultBytes
+	}
+	return store.LimitCellBytes
 }

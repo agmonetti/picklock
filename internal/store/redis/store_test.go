@@ -223,3 +223,24 @@ func TestRedis_SplitRedisCommands(t *testing.T) {
 		}
 	})
 }
+
+func TestRedisLimitMetadataCoversSkippedCells(t *testing.T) {
+	data := &store.TabularData{Rows: [][]string{{"large", "unretained"}}}
+	result := enforceRedisLimits(data, store.QueryLimits{MaxRows: 2, MaxCellBytes: 3, MaxResultBytes: 8}).(*store.TabularData)
+	if result.Rows[0][0] != "lar" || result.Status.Reason != store.LimitCellBytes || result.Status.RetainedBytes != 3 {
+		t.Fatalf("limited result = %+v", result)
+	}
+	if cell := result.Incomplete[store.CellPosition{Row: 0, Column: 1}]; cell.State != store.CellDeferred {
+		t.Fatalf("skipped suffix = %+v, want deferred", cell)
+	}
+}
+
+func TestRedisByteSlicePreviewPreservesRenderedSize(t *testing.T) {
+	text, retained, cut, reason := redisBoundedValue([]byte{0, 255}, 3, 20)
+	if !cut || reason != store.LimitCellBytes || retained != len(text) || text != "[0 " {
+		t.Fatalf("preview = %q, retained=%d, cut=%v, reason=%q", text, retained, cut, reason)
+	}
+	if full := redisValueSize([]byte{0, 255}); full != len("[0 255]") {
+		t.Fatalf("rendered full size = %d, want %d", full, len("[0 255]"))
+	}
+}

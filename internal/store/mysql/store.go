@@ -269,6 +269,45 @@ func (s *Store) QueryContextMax(ctx context.Context, sql string, max int) (*stor
 	return store.ScanResultMax(rows, max)
 }
 
+func (s *Store) QueryContextLimits(ctx context.Context, sql string, limits store.QueryLimits) (*store.Result, error) {
+	if s.readOnly {
+		conn, err := s.db.Conn(ctx)
+		if err != nil {
+			return nil, err
+		}
+		defer conn.Close()
+		if _, err := conn.ExecContext(ctx, "SET SESSION TRANSACTION READ ONLY"); err != nil {
+			return nil, err
+		}
+		rows, err := conn.QueryContext(ctx, sql)
+		if err != nil {
+			return nil, err
+		}
+		res, scanErr := store.ScanResultLimits(rows, limits)
+		closeErr := rows.Close()
+		if scanErr != nil {
+			return nil, scanErr
+		}
+		if closeErr != nil {
+			return nil, closeErr
+		}
+		return res, nil
+	}
+	rows, err := s.db.QueryContext(ctx, sql)
+	if err != nil {
+		return nil, err
+	}
+	res, scanErr := store.ScanResultLimits(rows, limits)
+	closeErr := rows.Close()
+	if scanErr != nil {
+		return nil, scanErr
+	}
+	if closeErr != nil {
+		return nil, closeErr
+	}
+	return res, nil
+}
+
 // Exec runs SQL without a result.
 func (s *Store) Exec(sql string) (int64, error) {
 	return s.ExecContext(context.Background(), sql)

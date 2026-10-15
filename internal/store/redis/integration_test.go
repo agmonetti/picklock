@@ -162,8 +162,12 @@ func TestIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("HGETALL: %v", err)
 	}
-	if hk, ok := data.(*store.KeyValueData); !ok || len(hk.Entries) != 250 {
-		t.Errorf("HGETALL = %T with %d entries, want 250", data, hashLenOf(data))
+	hk, ok := data.(*store.KeyValueData)
+	if !ok {
+		t.Fatalf("HGETALL = %T, want KeyValueData", data)
+	}
+	if len(hk.Entries) != 10 || hk.Status.Reason != store.LimitRows || hk.Status.RetainedItems != 10 {
+		t.Errorf("HGETALL = %d entries and status %+v, want 10 entries with an explicit rows cutoff", len(hk.Entries), hk.Status)
 	}
 }
 

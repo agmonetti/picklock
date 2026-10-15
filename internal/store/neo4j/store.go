@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	neo4jdriver "github.com/neo4j/neo4j-go-driver/v5/neo4j"
 
@@ -574,20 +575,16 @@ func (e *Neo4jExecutor) Execute(ctx context.Context, buffer string, line int, li
 		stmtIdx = store.StatementAt(stmts, line)
 	}
 	targetQuery := stmts[stmtIdx].Text
-
 	isMut := e.IsMutation(targetQuery)
 	if e.source.readOnly && isMut {
 		return nil, errors.New("mutations are blocked in read-only mode")
 	}
-
 	accessMode := neo4jdriver.AccessModeRead
 	if isMut {
 		accessMode = neo4jdriver.AccessModeWrite
 	}
-
 	session := e.source.driver.NewSession(ctx, neo4jdriver.SessionConfig{
-		DatabaseName: e.source.database,
-		AccessMode:   accessMode,
+		DatabaseName: e.source.database, AccessMode: accessMode,
 	})
 	defer session.Close(ctx)
 
@@ -595,72 +592,166 @@ func (e *Neo4jExecutor) Execute(ctx context.Context, buffer string, line int, li
 	if err != nil {
 		return nil, fmt.Errorf("cypher error: %w", err)
 	}
-
-	var rows [][]string
 	cols, err := result.Keys()
 	if err != nil {
 		cols = nil
 	}
-
+	var rows [][]string
+	var nulls [][]bool
 	var nodes []store.GraphNode
+	incomplete := make(map[store.CellPosition]store.IncompleteCell)
+	status := store.ResultStatus{}
+	var retainedBytes int64
 	truncated := false
 	for result.Next(ctx) {
 		if len(rows) >= limits.MaxRows {
 			truncated = true
+			status.Reason = store.LimitRows
 			break
 		}
 		record := result.Record()
 		row := make([]string, len(cols))
+		rowNulls := make([]bool, len(cols))
 		for i, c := range cols {
 			val, _ := record.Get(c)
-			if n, ok := val.(neo4jdriver.Node); ok {
+			rowNulls[i] = val == nil
+		}
+		rowBytes := int64(0)
+		for i, c := range cols {
+			val, _ := record.Get(c)
+			if val == nil {
+				continue
+			}
+			if n, ok := val.(neo4jdriver.Node); ok && len(cols) == 1 {
 				nodeID := fmt.Sprint(n.ElementId)
 				if nodeID == "" {
 					nodeID = strconv.FormatInt(n.Id, 10)
 				}
-				props := make(map[string]string)
+				props := make(map[string]string, len(n.Props))
+				node := store.GraphNode{ID: nodeID, Labels: n.Labels, Properties: props}
 				for pk, pv := range n.Props {
-					props[pk] = fmt.Sprint(pv)
+					text := neo4jText(pv)
+					remaining := int64(limits.MaxResultBytes) - retainedBytes - rowBytes
+					cellLimit := limits.MaxCellBytes
+					reason := store.LimitCellBytes
+					if remaining < int64(cellLimit) {
+						cellLimit = int(remaining)
+						reason = store.LimitResultBytes
+					}
+					if len(text) > cellLimit {
+						end := utf8Prefix(text, cellLimit)
+						props[pk] = text[:end]
+						if node.Incomplete == nil {
+							node.Incomplete = make(map[string]store.IncompleteCell)
+						}
+						size := int64(len(text))
+						node.Incomplete[pk] = store.IncompleteCell{State: store.CellPreview, Type: fmt.Sprintf("%T", pv), SizeBytes: &size}
+						rowBytes += int64(end)
+						truncated = true
+						status.Reason = reason
+						break
+					}
+					props[pk] = text
+					rowBytes += int64(len(text))
 				}
-				nodes = append(nodes, store.GraphNode{
-					ID:         nodeID,
-					Labels:     n.Labels,
-					Properties: props,
-				})
-				row[i] = fmt.Sprintf("(:%s %v)", strings.Join(n.Labels, ":"), props)
+				if truncated {
+					for key, value := range n.Props {
+						if _, retained := props[key]; !retained {
+							node.Incomplete[key] = store.IncompleteCell{State: store.CellDeferred, Type: fmt.Sprintf("%T", value)}
+						}
+					}
+				}
+				nodes = append(nodes, node)
 			} else {
-				row[i] = fmt.Sprint(val)
+				text := ""
+				if n, ok := val.(neo4jdriver.Node); ok {
+					props := make(map[string]string, len(n.Props))
+					for key, value := range n.Props {
+						props[key] = neo4jText(value)
+					}
+					text = fmt.Sprintf("(:%s %v)", strings.Join(n.Labels, ":"), props)
+				} else {
+					text = neo4jText(val)
+				}
+				remaining := int64(limits.MaxResultBytes) - retainedBytes - rowBytes
+				cellLimit := limits.MaxCellBytes
+				reason := store.LimitCellBytes
+				if remaining < int64(cellLimit) {
+					cellLimit = int(remaining)
+					reason = store.LimitResultBytes
+				}
+				if len(text) > cellLimit {
+					end := utf8Prefix(text, cellLimit)
+					row[i] = text[:end]
+					rowBytes += int64(end)
+					size := int64(len(text))
+					incomplete[store.CellPosition{Row: len(rows), Column: i}] = store.IncompleteCell{
+						State: store.CellPreview, Type: fmt.Sprintf("%T", val), SizeBytes: &size,
+					}
+					truncated = true
+					status.Reason = reason
+					for skipped := i + 1; skipped < len(cols); skipped++ {
+						skippedValue, _ := record.Get(cols[skipped])
+						if skippedValue != nil {
+							incomplete[store.CellPosition{Row: len(rows), Column: skipped}] = store.IncompleteCell{
+								State: store.CellDeferred, Type: fmt.Sprintf("%T", skippedValue),
+							}
+						}
+					}
+					break
+				}
+				row[i] = text
+				rowBytes += int64(len(text))
+			}
+			if truncated && status.Reason != "" && (int64(limits.MaxResultBytes)-retainedBytes-rowBytes <= 0) {
+				break
 			}
 		}
 		rows = append(rows, row)
+		nulls = append(nulls, rowNulls)
+		retainedBytes += rowBytes
+		if truncated && status.Reason != "" {
+			break
+		}
+	}
+	summary, consumeErr := result.Consume(ctx)
+	if consumeErr != nil {
+		return nil, consumeErr
+	}
+	if err := result.Err(); err != nil {
+		return nil, err
 	}
 
-	summary, _ := result.Consume(ctx)
+	status.RetainedItems, status.RetainedBytes = len(rows), retainedBytes
 	if isMut && summary != nil {
 		counters := summary.Counters()
-		// Count structural changes only; a bare CREATE (node) reports 1 and a
-		// property-only SET reports 0 affected (it still mutates schema/data).
 		affected := counters.NodesCreated() + counters.NodesDeleted() +
 			counters.RelationshipsCreated() + counters.RelationshipsDeleted()
-		return &store.TabularData{
-			Columns:   cols,
-			Rows:      rows,
-			Affected:  int64(affected),
-			Truncated: truncated,
-		}, nil
+		return &store.TabularData{Columns: cols, Rows: rows, Nulls: nulls, Affected: int64(affected), Truncated: truncated, Status: status}, nil
 	}
-
 	if len(nodes) > 0 && len(cols) == 1 {
-		return &store.GraphData{
-			Nodes: nodes,
-		}, nil
+		return &store.GraphData{Nodes: nodes, Status: status}, nil
 	}
+	data := &store.TabularData{
+		Columns: cols, Rows: rows, Nulls: nulls, Affected: -1, TotalRows: -1,
+		Truncated: truncated, Status: status,
+	}
+	if truncated && status.Reason != store.LimitRows {
+		data.Incomplete = incomplete
+	}
+	return data, nil
+}
 
-	return &store.TabularData{
-		Columns:   cols,
-		Rows:      rows,
-		Affected:  -1, // read query
-		TotalRows: -1,
-		Truncated: truncated,
-	}, nil
+func utf8Prefix(value string, maxBytes int) int {
+	end := maxBytes
+	for end > 0 && !utf8.RuneStart(value[end]) {
+		end--
+	}
+	return end
+}
+func neo4jText(value any) string {
+	if text, ok := value.(string); ok {
+		return text
+	}
+	return fmt.Sprint(value)
 }

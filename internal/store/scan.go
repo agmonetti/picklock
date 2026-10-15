@@ -61,6 +61,157 @@ func ScanResultMax(rows *sql.Rows, max int) (*Result, error) {
 	return &res, rows.Err()
 }
 
+// ScanResultLimits bounds retained rows and rendered cell content. Driver-owned
+// values still exist until Scan returns; conversion and application retention
+// are capped before formatting/hex encoding.
+func ScanResultLimits(rows *sql.Rows, limits QueryLimits) (*Result, error) {
+	if err := limits.Validate(); err != nil {
+		return nil, err
+	}
+	colTypes, err := rows.ColumnTypes()
+	if err != nil {
+		return nil, err
+	}
+	columns := make([]string, len(colTypes))
+	for i, ct := range colTypes {
+		columns[i] = ct.Name()
+	}
+
+	res := &Result{Affected: -1, Columns: columns}
+	var retainedBytes int64
+	for rows.Next() {
+		if len(res.Rows) >= limits.MaxRows {
+			res.Truncated = true
+			res.Status.Reason = LimitRows
+			break
+		}
+		vals := make([]any, len(columns))
+		ptrs := make([]any, len(columns))
+		for i := range vals {
+			ptrs[i] = &vals[i]
+		}
+		if err := rows.Scan(ptrs...); err != nil {
+			return nil, err
+		}
+
+		row := make([]string, len(columns))
+		nulls := make([]bool, len(columns))
+		for i, value := range vals {
+			nulls[i] = value == nil
+		}
+		rowBytes := int64(0)
+		rowReason := LimitReason("")
+		for i, value := range vals {
+			if value == nil {
+				continue
+			}
+			remaining := int64(limits.MaxResultBytes) - retainedBytes - rowBytes
+			cellLimit := limits.MaxCellBytes
+			if remaining < int64(cellLimit) {
+				cellLimit = int(remaining)
+			}
+			text, fullBytes, capped := stringifyBounded(value, cellLimit)
+			row[i] = text
+			rowBytes += int64(len(text))
+			if capped {
+				reason := LimitCellBytes
+				if remaining < int64(limits.MaxCellBytes) {
+					reason = LimitResultBytes
+				}
+				if rowReason == "" || reason == LimitResultBytes {
+					rowReason = reason
+				}
+				if res.Incomplete == nil {
+					res.Incomplete = make(map[CellPosition]IncompleteCell)
+				}
+				size := int64(fullBytes)
+				res.Incomplete[CellPosition{Row: len(res.Rows), Column: i}] = IncompleteCell{
+					State: CellPreview, Type: fmt.Sprintf("%T", value), SizeBytes: &size,
+				}
+			}
+			if rowReason != "" {
+				for skipped := i + 1; skipped < len(vals); skipped++ {
+					if vals[skipped] != nil {
+						res.Incomplete[CellPosition{Row: len(res.Rows), Column: skipped}] = IncompleteCell{
+							State: CellDeferred, Type: fmt.Sprintf("%T", vals[skipped]),
+						}
+					}
+				}
+				break
+			}
+		}
+		res.Rows = append(res.Rows, row)
+		res.Nulls = append(res.Nulls, nulls)
+		retainedBytes += rowBytes
+		if rowReason != "" {
+			res.Truncated = true
+			res.Status.Reason = rowReason
+			break
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	res.Status.RetainedItems = len(res.Rows)
+	res.Status.RetainedBytes = retainedBytes
+	return res, nil
+}
+
+// stringifyBounded applies the display-byte budget without first formatting an
+// oversized string or allocating a full hex representation of binary data.
+func stringifyBounded(value any, maxBytes int) (text string, fullBytes int, truncated bool) {
+	switch v := value.(type) {
+	case string:
+		fullBytes = len(v)
+		if fullBytes <= maxBytes {
+			return v, fullBytes, false
+		}
+		end := maxBytes
+		for end > 0 && !utf8.RuneStart(v[end]) {
+			end--
+		}
+		return v[:end], fullBytes, true
+	case []byte:
+		if len(v) == 1 && (v[0] == 0 || v[0] == 1) {
+			s := strconv.Itoa(int(v[0]))
+			return s, len(s), len(s) > maxBytes
+		}
+		if isPrintableUTF8(v) {
+			fullBytes = len(v)
+			if fullBytes <= maxBytes {
+				return string(v), fullBytes, false
+			}
+			end := maxBytes
+			for end > 0 && !utf8.RuneStart(v[end]) {
+				end--
+			}
+			return string(v[:end]), fullBytes, true
+		}
+		fullBytes = 2 + len(v)*2
+		if fullBytes <= maxBytes {
+			return "0x" + hex.EncodeToString(v), fullBytes, false
+		}
+		if maxBytes < 2 {
+			return "", fullBytes, true
+		}
+		n := (maxBytes - 2) / 2
+		return "0x" + hex.EncodeToString(v[:min(n, len(v))]), fullBytes, true
+	default:
+		text = Stringify(value)
+		fullBytes = len(text)
+		if fullBytes <= maxBytes {
+			return text, fullBytes, false
+		}
+		if end := maxBytes; end > 0 {
+			for end > 0 && !utf8.RuneStart(text[end]) {
+				end--
+			}
+			return text[:end], fullBytes, true
+		}
+		return "", fullBytes, true
+	}
+}
+
 // ScanBrowseProjection scans projected visible values, hidden NULL/preview
 // flags, and native identity values into the public browse result shape.
 func ScanBrowseProjection(rows *sql.Rows, layout BrowseProjectionLayout, object string) (*Result, error) {
@@ -254,10 +405,12 @@ func isPrintableUTF8(b []byte) bool {
 	if !utf8.Valid(b) {
 		return false
 	}
-	for _, r := range string(b) {
+	for len(b) > 0 {
+		r, size := utf8.DecodeRune(b)
 		if !unicode.IsPrint(r) && r != '\t' && r != '\n' && r != '\r' {
 			return false
 		}
+		b = b[size:]
 	}
 	return true
 }

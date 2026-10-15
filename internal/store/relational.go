@@ -363,17 +363,19 @@ func (e *RelationalQueryExecutor) Execute(ctx context.Context, buffer string, li
 	}
 
 	if ReturnsSQLRows(q) {
-		res, err := e.store.QueryContextMax(ctx, q, limits.MaxRows)
+		res, err := e.store.QueryContextLimits(ctx, q, limits)
 		if err != nil {
 			return nil, err
 		}
 		return &TabularData{
-			Columns:   res.Columns,
-			Rows:      res.Rows,
-			Nulls:     res.Nulls,
-			Affected:  -1,
-			Truncated: res.Truncated,
-			TotalRows: -1,
+			Columns:    res.Columns,
+			Rows:       res.Rows,
+			Nulls:      res.Nulls,
+			Affected:   -1,
+			Truncated:  res.Truncated,
+			TotalRows:  -1,
+			Incomplete: res.Incomplete,
+			Status:     res.Status,
 		}, nil
 	}
 

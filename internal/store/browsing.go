@@ -8,8 +8,8 @@ import (
 	"time"
 )
 
-// QueryLimits bounds retained content, not driver allocations or process RSS.
-// E2 migrates this contract; byte enforcement belongs to E6.
+// QueryLimits bounds application-retained result content, not driver
+// allocations, network transfer, or process RSS.
 type QueryLimits struct {
 	MaxRows        int
 	MaxCellBytes   int

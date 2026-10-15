@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	goredis "github.com/redis/go-redis/v9"
 
@@ -510,19 +511,124 @@ func (e *RedisExecutor) Execute(ctx context.Context, buffer string, line int, li
 		return nil, fmt.Errorf("command %s is blocked in read-only mode", cmdName)
 	}
 
-	cmd := e.source.client.Do(ctx, args...)
-	val, err := cmd.Result()
+	val, err := e.source.client.Do(ctx, args...).Result()
 	if err != nil {
 		if errors.Is(err, goredis.Nil) {
-			return &store.RawTextData{
-				Title: "Result",
-				Text:  "(nil)",
-			}, nil
+			return enforceRedisLimits(&store.RawTextData{Title: "Result", Text: "(nil)"}, limits), nil
 		}
 		return nil, err
 	}
 
-	return formatRedisResult(val), nil
+	return formatRedisResultLimited(val, limits), nil
+}
+
+func enforceRedisLimits(view store.DataView, limits store.QueryLimits) store.DataView {
+	var status store.ResultStatus
+	var retainedBytes int64
+	appendCell := func(value *string, row, column int) bool {
+		remaining := int64(limits.MaxResultBytes) - retainedBytes
+		capBytes := limits.MaxCellBytes
+		reason := store.LimitCellBytes
+		if remaining < int64(capBytes) {
+			capBytes = int(remaining)
+			reason = store.LimitResultBytes
+		}
+		if len(*value) > capBytes {
+			end := capBytes
+			for end > 0 && !utf8.RuneStart((*value)[end]) {
+				end--
+			}
+			fullBytes := int64(len(*value))
+			*value = (*value)[:end]
+			status.Reason = reason
+			status.RetainedBytes = retainedBytes + int64(end)
+			status.RetainedItems = row + 1
+			incomplete := store.IncompleteCell{State: store.CellPreview, Type: "string", SizeBytes: &fullBytes}
+			switch data := view.(type) {
+			case *store.TabularData:
+				if data.Incomplete == nil {
+					data.Incomplete = make(map[store.CellPosition]store.IncompleteCell)
+				}
+				data.Incomplete[store.CellPosition{Row: row, Column: column}] = incomplete
+			case *store.KeyValueData:
+				data.Entries[row].Incomplete = &incomplete
+			case *store.RawTextData:
+				data.Incomplete = &incomplete
+			}
+			return false
+		}
+		retainedBytes += int64(len(*value))
+		return true
+	}
+
+	switch data := view.(type) {
+	case *store.TabularData:
+		originalRows := len(data.Rows)
+		for r := 0; r < originalRows && r < limits.MaxRows; r++ {
+			for c := range data.Rows[r] {
+				if !appendCell(&data.Rows[r][c], r, c) {
+					for next := c + 1; next < len(data.Rows[r]); next++ {
+						data.Rows[r][next] = ""
+						if data.Incomplete == nil {
+							data.Incomplete = make(map[store.CellPosition]store.IncompleteCell)
+						}
+						data.Incomplete[store.CellPosition{Row: r, Column: next}] = store.IncompleteCell{State: store.CellDeferred}
+					}
+					data.Rows = data.Rows[:r+1]
+					data.Truncated = true
+					data.Status = status
+					return data
+				}
+			}
+		}
+		data.Rows = data.Rows[:min(originalRows, limits.MaxRows)]
+		if originalRows > limits.MaxRows {
+			status.Reason = store.LimitRows
+			data.Truncated = true
+		}
+		status.RetainedItems, status.RetainedBytes = len(data.Rows), retainedBytes
+		data.Status = status
+		return data
+	case *store.KeyValueData:
+		originalEntries := len(data.Entries)
+		for i := 0; i < originalEntries && i < limits.MaxRows; i++ {
+			if !appendCell(&data.Entries[i].Index, i, 0) {
+				data.Entries[i].Value, data.Entries[i].Extra = "", ""
+				data.Entries = data.Entries[:i+1]
+				data.Status = status
+				return data
+			}
+			if !appendCell(&data.Entries[i].Value, i, 1) {
+				data.Entries[i].Extra = ""
+				data.Entries = data.Entries[:i+1]
+				data.Status = status
+				return data
+			}
+			if !appendCell(&data.Entries[i].Extra, i, 2) {
+				data.Entries = data.Entries[:i+1]
+				data.Status = status
+				return data
+			}
+		}
+		data.Entries = data.Entries[:min(originalEntries, limits.MaxRows)]
+		if originalEntries > limits.MaxRows {
+			status.Reason = store.LimitRows
+		}
+		status.RetainedItems, status.RetainedBytes = len(data.Entries), retainedBytes
+		data.Status = status
+		return data
+	case *store.RawTextData:
+		if !appendCell(&data.Text, 0, 0) {
+			data.Status = status
+			return data
+		}
+		status.RetainedItems = 1
+		status.RetainedBytes = retainedBytes
+		data.Status = status
+		return data
+	default:
+		return view
+	}
 }
 
 func parseRedisCommandArgs(raw string) ([]any, error) {
@@ -597,6 +703,195 @@ func parseRedisCommandArgs(raw string) ([]any, error) {
 	}
 
 	return args, nil
+}
+
+func formatRedisResultLimited(value any, limits store.QueryLimits) store.DataView {
+	switch values := value.(type) {
+	case []any:
+		result := &store.TabularData{Columns: []string{"#", "value"}, Affected: -1, TotalRows: -1}
+		var retained int64
+		for i := 0; i < len(values) && i < limits.MaxRows; i++ {
+			index := strconv.Itoa(i)
+			indexText, n, cut, reason := redisBoundedValue(index, limits.MaxCellBytes, limits.MaxResultBytes-int(retained))
+			retained += int64(n)
+			row := []string{indexText, ""}
+			if cut {
+				result.Rows = append(result.Rows, row)
+				result.Incomplete = map[store.CellPosition]store.IncompleteCell{
+					{Row: i, Column: 0}: {State: store.CellPreview, Type: "string", SizeBytes: int64Pointer(len(index))},
+				}
+				if values[i] != nil {
+					result.Incomplete[store.CellPosition{Row: i, Column: 1}] = store.IncompleteCell{State: store.CellDeferred, Type: fmt.Sprintf("%T", values[i])}
+				}
+				result.Truncated = true
+				result.Status = store.ResultStatus{Reason: reason, RetainedItems: len(result.Rows), RetainedBytes: retained}
+				return result
+			}
+			row[1], n, cut, reason = redisBoundedValue(values[i], limits.MaxCellBytes, limits.MaxResultBytes-int(retained))
+			retained += int64(n)
+			result.Rows = append(result.Rows, row)
+			if cut {
+				result.Incomplete = map[store.CellPosition]store.IncompleteCell{
+					{Row: i, Column: 1}: {State: store.CellPreview, Type: fmt.Sprintf("%T", values[i]), SizeBytes: int64Pointer(redisValueSize(values[i]))},
+				}
+				result.Truncated = true
+				result.Status = store.ResultStatus{Reason: reason, RetainedItems: len(result.Rows), RetainedBytes: retained}
+				return result
+			}
+		}
+		if len(values) > limits.MaxRows {
+			result.Truncated = true
+			result.Status.Reason = store.LimitRows
+		}
+		result.Status.RetainedItems, result.Status.RetainedBytes = len(result.Rows), retained
+		return result
+	case map[string]string:
+		return formatRedisHashLimited(values, len(values), limits)
+	case map[string]any:
+		return formatRedisHashLimited(values, len(values), limits)
+	case map[interface{}]interface{}:
+		return formatRedisHashLimited(values, len(values), limits)
+	default:
+		return enforceRedisLimits(formatRedisResult(value), limits)
+	}
+}
+
+func formatRedisHashLimited[K comparable, V any](values map[K]V, total int, limits store.QueryLimits) store.DataView {
+	result := &store.KeyValueData{Type: "hash", TTL: "-"}
+	var retained int64
+	for key, value := range values {
+		if len(result.Entries) >= limits.MaxRows {
+			break
+		}
+		index, n, cut, reason := redisBoundedValue(key, limits.MaxCellBytes, limits.MaxResultBytes-int(retained))
+		retained += int64(n)
+		entry := store.KVEntry{Index: index}
+		if cut {
+			size := int64(redisValueSize(key))
+			entry.Incomplete = &store.IncompleteCell{State: store.CellPreview, Type: fmt.Sprintf("%T", key), SizeBytes: &size}
+			result.Entries = append(result.Entries, entry)
+			result.Status = store.ResultStatus{Reason: reason, RetainedItems: len(result.Entries), RetainedBytes: retained}
+			return result
+		}
+		entry.Value, n, cut, reason = redisBoundedValue(value, limits.MaxCellBytes, limits.MaxResultBytes-int(retained))
+		retained += int64(n)
+		if cut {
+			size := int64(redisValueSize(value))
+			entry.Incomplete = &store.IncompleteCell{State: store.CellPreview, Type: fmt.Sprintf("%T", value), SizeBytes: &size}
+		}
+		result.Entries = append(result.Entries, entry)
+		if cut {
+			result.Status = store.ResultStatus{Reason: reason, RetainedItems: len(result.Entries), RetainedBytes: retained}
+			return result
+		}
+	}
+	if total > limits.MaxRows {
+		result.Status.Reason = store.LimitRows
+	}
+	result.Status.RetainedItems, result.Status.RetainedBytes = len(result.Entries), retained
+	return result
+}
+
+func redisBoundedValue(value any, maxCell, remaining int) (string, int, bool, store.LimitReason) {
+	var text string
+	var size int
+	switch v := value.(type) {
+	case string:
+		text, size = v, len(v)
+	case []byte:
+		text, _, cut := redisByteSliceText(v, min(maxCell, remaining))
+		if cut {
+			return text, len(text), true, redisCutReason(maxCell, remaining)
+		}
+		return text, len(text), false, ""
+	default:
+		text = fmt.Sprint(value)
+		size = len(text)
+	}
+	if size <= maxCell && size <= remaining {
+		return text, size, false, ""
+	}
+	end := redisUTF8StringPrefix(text, min(maxCell, remaining))
+	return text[:end], end, true, redisCutReason(maxCell, remaining)
+}
+
+func redisUTF8StringPrefix(value string, maxBytes int) int {
+	end := maxBytes
+	for end > 0 && !utf8.RuneStart(value[end]) {
+		end--
+	}
+	return end
+}
+
+func redisByteSliceText(value []byte, maxBytes int) (string, int, bool) {
+	size := redisByteSliceSize(value)
+	if size <= maxBytes {
+		return fmt.Sprint(value), size, false
+	}
+	var out strings.Builder
+	out.Grow(maxBytes)
+	appendPart := func(part string) {
+		remaining := maxBytes - out.Len()
+		if remaining > 0 {
+			if len(part) > remaining {
+				part = part[:remaining]
+			}
+			out.WriteString(part)
+		}
+	}
+	appendPart("[")
+	for i, b := range value {
+		if i > 0 {
+			appendPart(" ")
+		}
+		var digits [3]byte
+		appendPart(string(strconv.AppendInt(digits[:0], int64(b), 10)))
+		if out.Len() >= maxBytes {
+			break
+		}
+	}
+	appendPart("]")
+	return out.String(), size, true
+}
+
+func redisByteSliceSize(value []byte) int {
+	size := 2
+	for i, b := range value {
+		if i > 0 {
+			size++
+		}
+		switch {
+		case b >= 100:
+			size += 3
+		case b >= 10:
+			size += 2
+		default:
+			size++
+		}
+	}
+	return size
+}
+
+func redisValueSize(value any) int {
+	switch v := value.(type) {
+	case string:
+		return len(v)
+	case []byte:
+		return redisByteSliceSize(v)
+	default:
+		return len(fmt.Sprint(value))
+	}
+}
+func redisCutReason(maxCell, remaining int) store.LimitReason {
+	if remaining < maxCell {
+		return store.LimitResultBytes
+	}
+	return store.LimitCellBytes
+}
+
+func int64Pointer(value int) *int64 {
+	size := int64(value)
+	return &size
 }
 
 func formatRedisResult(val any) store.DataView {
