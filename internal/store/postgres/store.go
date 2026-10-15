@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -137,14 +138,14 @@ func (s *Store) Columns(table string) ([]store.Column, error) {
 // Indexes returns the indexes of a table in the current schema.
 func (s *Store) Indexes(table string) ([]store.Index, error) {
 	rows, err := s.db.Query(`
-		SELECT i.relname, a.attname, ix.indisunique
+		SELECT i.relname, a.attname, ix.indisunique, (ix.indpred IS NOT NULL)
 		FROM pg_class t
 		JOIN pg_index ix ON t.oid = ix.indrelid
 		JOIN pg_class i ON i.oid = ix.indexrelid
 		JOIN pg_namespace n ON t.relnamespace = n.oid
 		JOIN unnest(ix.indkey) WITH ORDINALITY AS k(attnum, ord) ON true
 		JOIN pg_attribute a ON t.oid = a.attrelid AND a.attnum = k.attnum
-		WHERE n.nspname = current_schema() AND t.relname = $1
+		WHERE n.nspname = current_schema() AND t.relname = $1 AND ix.indexprs IS NULL
 		ORDER BY i.relname, k.ord`, table)
 	if err != nil {
 		return nil, fmt.Errorf("store.Indexes(%s): %w", table, err)
@@ -156,13 +157,12 @@ func (s *Store) Indexes(table string) ([]store.Index, error) {
 	var order []string
 	for rows.Next() {
 		var name, col string
-		var unique bool
-		if err := rows.Scan(&name, &col, &unique); err != nil {
-			return nil, fmt.Errorf("store.Indexes(%s): %w", table, err)
+		var unique, partial bool
+		if err := rows.Scan(&name, &col, &unique, &partial); err != nil {
 		}
 		ix, ok := byName[name]
 		if !ok {
-			ix = &store.Index{Name: name, Unique: unique}
+			ix = &store.Index{Name: name, Unique: unique, Partial: partial}
 			byName[name] = ix
 			order = append(order, name)
 		}
@@ -323,6 +323,103 @@ func (s *Store) SelectTablePageContext(ctx context.Context, table string, limit,
 	}
 	defer rows.Close()
 	return store.ScanResult(rows)
+}
+
+// SelectTableOrderedPageContext pages by a validated primary-key tuple.
+func (s *Store) SelectTableOrderedPageContext(ctx context.Context, table string, orderBy []string, limit, offset int) (*store.Result, error) {
+	keys := make([]string, len(orderBy))
+	for i, key := range orderBy {
+		keys[i] = QuoteIdent(key)
+	}
+	q := fmt.Sprintf("SELECT * FROM %s ORDER BY %s LIMIT %d OFFSET %d", QuoteIdent(table), strings.Join(keys, ", "), limit, offset)
+	rows, err := s.db.QueryContext(ctx, q)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return store.ScanResult(rows)
+}
+
+func (s *Store) SelectTableBrowsePageContext(ctx context.Context, req store.BrowseRequest, columns []store.Column, orderBy, identityColumns []string, keysetColumn string) (*store.Result, error) {
+	previewBytes := req.Options.PreviewBytes
+	if previewBytes == 0 {
+		previewBytes = store.DefaultBrowsePreviewBytes
+	}
+
+	dialect := store.RelationalSQLDialect{
+		QuoteIdentifier: QuoteIdent,
+		BindVariable:    func(position int) string { return fmt.Sprintf("$%d", position) },
+		Pagination:      func(limit, offset int) string { return fmt.Sprintf("LIMIT %d OFFSET %d", limit, offset) },
+	}
+	if keysetColumn != "" {
+		keyType, err := s.keyType(req.ObjectName, keysetColumn)
+		if err != nil {
+			return nil, err
+		}
+		dialect.KeysetPredicate = func(column, bind string) string {
+			return fmt.Sprintf("%s > %s::%s", column, bind, keyType)
+		}
+	}
+
+	var cursorValue any
+	if req.Cursor != "" {
+		for _, column := range columns {
+			if column.Name == keysetColumn {
+				parsedCursor, parseErr := store.ParseBrowseCursor(column, req.Cursor)
+				if parseErr != nil {
+					return nil, parseErr
+				}
+				cursorValue = parsedCursor
+				break
+			}
+		}
+		if cursorValue == nil {
+			return nil, fmt.Errorf("PostgreSQL keyset cursor column %q is unavailable or unsupported", keysetColumn)
+		}
+	}
+	query, args, layout, err := store.BuildRelationalBrowseProjectionQuery(
+		req, columns, orderBy, identityColumns, keysetColumn, cursorValue, dialect, previewBytes,
+		func(column store.Column, limit int) store.SQLBrowseProjection {
+			typeName := strings.ToLower(strings.TrimSpace(column.Type))
+			quoted := QuoteIdent(column.Name)
+			bytea := typeName == "bytea"
+			switch typeName {
+			case "text", "character varying", "character", "char", "varchar", "name", "json", "jsonb", "xml":
+			case "bytea":
+			case "boolean", "smallint", "integer", "bigint", "decimal", "numeric", "real", "double precision",
+				"money", "date", "time without time zone", "time with time zone", "timestamp without time zone",
+				"timestamp with time zone", "interval", "uuid":
+				return store.SQLBrowseProjection{Type: column.Type}
+			default:
+				// Domains, enums, arrays, composites, and extension types are
+				// serialized to text before the bounded prefix is returned.
+			}
+			value := quoted
+			length := quoted
+			if bytea {
+				value = fmt.Sprintf("substring(%s from 1 for %d)", quoted, limit)
+			} else {
+				value = fmt.Sprintf("left(%s::text, %d)", quoted, limit)
+				length = fmt.Sprintf("convert_to(%s::text, 'UTF8')", quoted)
+			}
+			return store.SQLBrowseProjection{
+				ValueExpr:   value,
+				NullExpr:    fmt.Sprintf("CASE WHEN %s IS NULL THEN 1 ELSE 0 END", quoted),
+				PreviewExpr: fmt.Sprintf("octet_length(%s) > %d", length, limit),
+				Type:        column.Type,
+				Text:        !bytea,
+			}
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return store.ScanBrowseProjection(rows, layout, req.ObjectName)
 }
 
 // SelectTableKeysetPage returns the page after cursor ordered by the key. The

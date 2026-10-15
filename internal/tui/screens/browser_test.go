@@ -268,45 +268,6 @@ func TestRenderDataTable_CursorStaysVisible(t *testing.T) {
 	}
 }
 
-func TestColWidths_ShrinksToFitManyColumns(t *testing.T) {
-	cols := make([]string, 0, 12)
-	for i := 0; i < 12; i++ {
-		cols = append(cols, "col012345") // 9 wide
-	}
-	rows := [][]string{cols} // each cell as wide as its header
-
-	widths := colWidths(cols, rows, 70)
-	total := (len(widths) - 1) * colSepW
-	for _, w := range widths {
-		total += w
-	}
-	if total > 70 {
-		t.Errorf("widths %v sum to %d, want <= 70", widths, total)
-	}
-	for _, w := range widths {
-		if w < 1 {
-			t.Errorf("width %d below the 1-char minimum", w)
-		}
-	}
-
-	// with a tiny width every column keeps shrinking to a 1-cell minimum; the
-	// table may still not fit when even n + (n-1)*3 separators exceeds the pane
-	widths = colWidths(cols, rows, 40)
-	total = (len(widths) - 1) * colSepW
-	for _, w := range widths {
-		total += w
-	}
-	minTotal := len(widths) + (len(widths)-1)*colSepW
-	if total != minTotal {
-		t.Errorf("widths %v sum to %d, want the 1-cell minimum %d", widths, total, minTotal)
-	}
-	for _, w := range widths {
-		if w < 1 {
-			t.Errorf("width %d below the 1-char minimum", w)
-		}
-	}
-}
-
 func dataLines(out string, height int) []string {
 	lines := ansiStripLines(strings.TrimSuffix(out, "\n"))
 	data := make([]string, 0, len(lines))
@@ -317,50 +278,6 @@ func dataLines(out string, height int) []string {
 		data = append(data, strings.TrimSpace(l))
 	}
 	return data
-}
-
-func TestColWidths_KeepsNaturalWhenItFits(t *testing.T) {
-	cols := []string{"id", "name"}
-	rows := [][]string{{"1", "alice"}}
-	widths := colWidths(cols, rows, 40)
-	if widths[0] != 2 || widths[1] != 5 {
-		t.Errorf("widths = %v, want [2 5]", widths)
-	}
-}
-
-func TestColWidths_CapsAndDistributes(t *testing.T) {
-	cols := []string{"id", "name", "body"}
-	rows := [][]string{{"1", "alice", strings.Repeat("x", 100)}}
-	widths := colWidths(cols, rows, 40)
-	if len(widths) != 3 {
-		t.Fatalf("widths = %v", widths)
-	}
-	if widths[2] > colMaxW {
-		t.Errorf("body width = %d, want <= %d", widths[2], colMaxW)
-	}
-	total := (len(widths) - 1) * colSepW
-	for _, w := range widths {
-		total += w
-	}
-	if total > 40 {
-		t.Errorf("total = %d, want <= 40", total)
-	}
-	// the narrow columns keep their natural width; the long one absorbs the rest
-	if widths[0] != 2 {
-		t.Errorf("id width = %d, want 2 (kept natural)", widths[0])
-	}
-	if widths[2] <= widths[1] {
-		t.Errorf("body width %d should be the largest", widths[2])
-	}
-}
-
-func TestColWidths_CapsSingleHugeColumn(t *testing.T) {
-	cols := []string{"id", "huge"}
-	rows := [][]string{{"1", strings.Repeat("x", 500)}}
-	widths := colWidths(cols, rows, 200)
-	if widths[1] != colMaxW {
-		t.Errorf("huge width = %d, want %d", widths[1], colMaxW)
-	}
 }
 
 func TestRenderRowDetail_ShowsFullValue(t *testing.T) {
@@ -678,7 +595,7 @@ func TestRenderDataTable_DistinguishesNullAndEmptyString(t *testing.T) {
 }
 
 func TestRenderRowDetail_NullValue(t *testing.T) {
-	out := RenderRowDetail("users", []string{"id", "phone"}, []string{"1", ""}, 1, 0, 40, 20)
+	out := RenderRowDetailWithMetadata("users", []string{"id", "phone"}, []string{"1", ""}, []bool{false, true}, nil, 1, 0, 40, 20)
 	plain := ansi.Strip(out)
 	if !strings.Contains(plain, "∅") {
 		t.Errorf("detail view for NULL field must contain ∅: %q", plain)
@@ -703,3 +620,131 @@ func TestRenderSidebar_GroupsRelationTables(t *testing.T) {
 		t.Errorf("relation line maps to item %d, want 1", got)
 	}
 }
+
+func TestTruncate_VisualBudget(t *testing.T) {
+	for _, tc := range []struct {
+		name, input, want string
+		width             int
+	}{
+		{"empty", "", "", 4},
+		{"zero", "abc", "", 0},
+		{"negative", "abc", "", -1},
+		{"exact", "abcd", "abcd", 4},
+		{"ellipsis_in_budget", "abcde", "abc…", 4},
+		{"minimum_exact", "a", "a", 1},
+		{"minimum_overflow", "ab", "…", 1},
+		{"multibyte", "áéíó", "áé…", 3},
+		{"wide_exact", "界語", "界語", 4},
+		{"wide_overflow", "界語文", "界…", 4},
+		{"wide_minimum", "界", "…", 1},
+		{"combining_exact", "e\u0301o\u0308", "e\u0301o\u0308", 2},
+		{"combining_overflow", "e\u0301o\u0308x", "e\u0301…", 2},
+		{"zwj_exact", "👩‍💻", "👩‍💻", 2},
+		{"zwj_overflow", "👩‍💻xyz", "👩‍💻…", 3},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := truncate(tc.input, tc.width)
+			if got != tc.want {
+				t.Fatalf("truncate(%q, %d) = %q, want %q", tc.input, tc.width, got, tc.want)
+			}
+			if w := runewidth.StringWidth(got); w > max(tc.width, 0) {
+				t.Fatalf("visual width %d exceeds budget %d", w, tc.width)
+			}
+		})
+	}
+}
+
+func TestRenderDataTable_UnicodeAlignment(t *testing.T) {
+	cols := []string{"id", "日本語", "notes"}
+	rows := [][]string{{"1", "界語", ""}, {"2", "e\u0301o\u0308", ""}, {"3", "👩‍💻", "tail"}}
+	nulls := [][]bool{{false, false, true}, {false, false, false}, {false, false, false}}
+	out := RenderDataTableWithNulls(cols, rows, nulls, 1, 0, 40, 5)
+	lines := strings.Split(strings.TrimSuffix(out, "\n"), "\n")
+	if len(lines) != 5 {
+		t.Fatalf("visible lines = %d, want header, separator and 3 rows", len(lines))
+	}
+	wantWidth := ansi.StringWidth(lines[0])
+	for i, line := range lines {
+		if w := ansi.StringWidth(line); w != wantWidth || w > 40 {
+			t.Errorf("line %d width %d, want %d within 40", i, w, wantWidth)
+		}
+	}
+	if !hasBackground(lines[3]) || hasBackground(lines[2]) || hasBackground(lines[4]) {
+		t.Fatal("selection must stay on the combining-character row")
+	}
+	if !strings.Contains(ansi.Strip(lines[2]), "∅") || strings.Contains(ansi.Strip(lines[3]), "∅") {
+		t.Fatal("NULL and empty string must remain distinct")
+	}
+}
+
+func TestRenderMainBrowser_HeavySuffixAndViewport(t *testing.T) {
+	b := &browser.Browser{
+		Tables: []string{"heavy"},
+		Data: &store.TabularData{
+			Columns: []string{"body", "after"},
+			Rows: [][]string{
+				{strings.Repeat("x", 1<<20), "first"},
+				{"visible", "second"},
+				{"offscreen", "third"},
+			},
+		},
+	}
+	out := RenderMainBrowser(b, 0, 40, 4)
+	plain := ansi.Strip(out)
+	if !strings.Contains(plain, strings.Repeat("x", 35)+"…") || !strings.Contains(plain, "visible") {
+		t.Fatalf("incorrect visible prefix/rows: %q", plain)
+	}
+	if strings.Contains(plain, "offscreen") || !strings.Contains(plain, "▶") {
+		t.Fatalf("row window or horizontal indicator lost: %q", plain)
+	}
+	b.Cursor = 2
+	scrolled := ansi.Strip(RenderMainBrowser(b, 1, 20, 4))
+	if !strings.Contains(scrolled, "◀") || !strings.Contains(scrolled, "second") ||
+		!strings.Contains(scrolled, "third") || strings.Contains(scrolled, "first") {
+		t.Fatalf("incorrect scrolled viewport: %q", scrolled)
+	}
+}
+
+func TestRenderRowDetail_WrappedViewport(t *testing.T) {
+	value := "e\u0301界👩‍💻" + strings.Repeat("z", 1<<20)
+	cols, vals := []string{"body", "last"}, []string{value, "end"}
+	top := RenderRowDetail("heavy", cols, vals, 0, 0, 16, 4)
+	if plain := ansi.Strip(top); plain != "\n> body:\n    e\u0301界👩‍💻zzz\n    zzzzzzzz" {
+		t.Fatalf("incorrect wrapped prefix: %q", plain)
+	}
+	// A smaller window must be an exact slice of the same logical lines.
+	full := strings.Split(RenderRowDetail("heavy", cols, vals, 0, 0, 16, 10), "\n")
+	got := RenderRowDetail("heavy", cols, vals, 0, 3, 16, 3)
+	if want := strings.Join(full[3:6], "\n"); got != want {
+		t.Fatalf("scrolled detail = %q, want %q", got, want)
+	}
+}
+
+// Same public render path and 80x10 viewport as the E0 smoke. Input allocation
+// is excluded; increasing the hidden suffix must leave the output identical.
+func BenchmarkRenderMainBrowserHeavyCell(b *testing.B) {
+	var reference string
+	for _, size := range []int{1 << 10, 4 << 10, 8 << 10, 1 << 20, 16 << 20} {
+		model := &browser.Browser{
+			Tables: []string{"heavy"},
+			Data: &store.TabularData{
+				Columns: []string{"payload"},
+				Rows:    [][]string{{strings.Repeat("x", size)}},
+			},
+		}
+		out := RenderMainBrowser(model, 0, 80, 10)
+		if reference == "" {
+			reference = out
+		} else if out != reference {
+			b.Fatal("hidden suffix changed the rendered output")
+		}
+		b.Run(fmt.Sprintf("%dKiB", size/1024), func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				renderBenchmarkOutput = RenderMainBrowser(model, 0, 80, 10)
+			}
+		})
+	}
+}
+
+var renderBenchmarkOutput string

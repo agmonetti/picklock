@@ -9,6 +9,12 @@ import (
 	"github.com/agmonetti/picklock/internal/store"
 )
 
+func queryLimitsForRows(maxRows int) store.QueryLimits {
+	limits := store.DefaultQueryLimits()
+	limits.MaxRows = maxRows
+	return limits
+}
+
 func TestRedis_Registered(t *testing.T) {
 	cfg := conn.New(conn.DriverRedis)
 	cfg.Host = "127.0.0.1"
@@ -109,7 +115,7 @@ func TestRedis_ExecutorIsMutationAndReadOnly(t *testing.T) {
 		t.Error("HGETALL must not be detected as mutation")
 	}
 
-	_, err := exec.Execute(context.Background(), "SET foo bar", 0, 10)
+	_, err := exec.Execute(context.Background(), "SET foo bar", 0, queryLimitsForRows(10))
 	if err == nil {
 		t.Fatal("expected mutation to be blocked in read-only mode")
 	}

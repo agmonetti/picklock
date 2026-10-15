@@ -140,8 +140,11 @@ func (s *MongoSource) Catalog() store.CatalogDescriptor {
 }
 
 func (s *MongoSource) Browse(ctx context.Context, req store.BrowseRequest) (store.BrowseResponse, error) {
-	if req.ObjectName == "" {
-		return store.BrowseResponse{}, errors.New("no collection specified")
+	if err := req.Validate(); err != nil {
+		return store.BrowseResponse{}, err
+	}
+	if err := req.Options.ValidateUnsupported(); err != nil {
+		return store.BrowseResponse{}, err
 	}
 
 	coll := s.database.Collection(req.ObjectName)
@@ -151,9 +154,6 @@ func (s *MongoSource) Browse(ctx context.Context, req store.BrowseRequest) (stor
 	}
 
 	limit := int64(req.PageSize)
-	if limit <= 0 {
-		limit = 50
-	}
 	skip := int64(req.Page) * limit
 
 	findOpts := options.Find().SetLimit(limit).SetSkip(skip)
@@ -242,6 +242,7 @@ func (s *MongoSource) Inspect(ctx context.Context, name string) (store.Inspectio
 			if err := cur.Decode(&ixDoc); err == nil {
 				ixName, _ := ixDoc["name"].(string)
 				uniq, _ := ixDoc["unique"].(bool)
+				_, partial := ixDoc["partialFilterExpression"]
 				var cols []string
 				if keyMap, ok := ixDoc["key"].(bson.M); ok {
 					for k := range keyMap {
@@ -252,6 +253,7 @@ func (s *MongoSource) Inspect(ctx context.Context, name string) (store.Inspectio
 					Name:    ixName,
 					Columns: cols,
 					Unique:  uniq,
+					Partial: partial,
 				})
 			}
 		}
@@ -342,11 +344,13 @@ func (e *MongoExecutor) IsMutation(stmt string) bool {
 
 var mqlCallPattern = regexp.MustCompile(`(?i)^db\.([a-zA-Z0-9_\-\.]+)\.([a-zA-Z0-9_]+)\s*\(([\s\S]*)\)\s*;?$`)
 
-// Execute runs a MongoDB MQL statement against the store. The QueryExecutor
-// contract passes (buffer, line, maxRows): line is the cursor line (MQL is
-// single-statement, so it is ignored) and maxRows caps how many documents a
-// find loads into memory.
-func (e *MongoExecutor) Execute(ctx context.Context, buffer string, _line int, maxRows int) (store.DataView, error) {
+// Execute runs a MongoDB MQL statement against the store. The cursor line is
+// ignored for this single-statement language; limits.MaxRows caps find results.
+// Byte budgets are a shared contract only until E6 enforces them.
+func (e *MongoExecutor) Execute(ctx context.Context, buffer string, _line int, limits store.QueryLimits) (store.DataView, error) {
+	if err := limits.Validate(); err != nil {
+		return nil, err
+	}
 	trimmed := strings.TrimSpace(buffer)
 	if trimmed == "" {
 		return nil, errors.New("empty query")
@@ -361,7 +365,7 @@ func (e *MongoExecutor) Execute(ctx context.Context, buffer string, _line int, m
 		collName := m[1]
 		method := strings.ToLower(m[2])
 		argsRaw := strings.TrimSpace(m[3])
-		return e.executeMQLCall(ctx, collName, method, argsRaw, maxRows)
+		return e.executeMQLCall(ctx, collName, method, argsRaw, limits.MaxRows)
 	}
 
 	// 2. Check for raw JSON command: e.g. {"find": "users", "filter": {...}}
@@ -401,9 +405,6 @@ func (e *MongoExecutor) executeMQLCall(ctx context.Context, collName, method, ar
 		}
 
 		findLimit := int64(maxRows)
-		if findLimit <= 0 {
-			findLimit = 50
-		}
 		findOpts := options.Find().SetLimit(findLimit).SetSkip(0)
 
 		cur, err := coll.Find(ctx, filterDoc, findOpts)

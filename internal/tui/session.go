@@ -166,9 +166,7 @@ func (m *Model) closeStore() {
 func (m *Model) openSettings() {
 	m.prevScreen = m.screen
 	m.screen = ScreenSettings
-	m.settings.SetValue(fmt.Sprintf("%d", m.prefs.QueryTimeout()))
-	m.settings.SetError("")
-	m.settings.Focus()
+	m.settings.SetPrefs(m.prefs)
 }
 
 // leaveSettings returns to the screen the user was on before settings.

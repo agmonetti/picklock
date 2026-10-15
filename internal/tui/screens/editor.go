@@ -243,8 +243,14 @@ func (s *EditorScreen) View(e *editor.Editor, width, height int) string {
 	var b strings.Builder
 	b.WriteString(s.ta.View())
 
-	// separator
-	b.WriteString("\n" + styles.StyleBorder.Render(strings.Repeat("─", width-2)) + "\n")
+	// Keep safety status in the separator slot so a short workspace pane
+	// cannot clip it below the result viewport.
+	summary := store.IncompletenessSummary(e.Data)
+	if summary != "" {
+		b.WriteString("\n" + styles.StyleHeaderDim.Render(truncate("INCOMPLETE: "+summary, width-2)) + "\n")
+	} else {
+		b.WriteString("\n" + styles.StyleBorder.Render(strings.Repeat("─", width-2)) + "\n")
+	}
 
 	if e.Error != "" {
 		b.WriteString(styles.StyleError.Render(e.Error))
@@ -281,10 +287,6 @@ func (s *EditorScreen) View(e *editor.Editor, width, height int) string {
 				scroll = maxScroll
 			}
 			view := rows[scroll:]
-			var viewNulls [][]bool
-			if v.Nulls != nil && scroll < len(v.Nulls) {
-				viewNulls = v.Nulls[scroll:]
-			}
 			cursor := -1
 			if s.resultCursor >= scroll {
 				cursor = s.resultCursor - scroll
@@ -292,11 +294,7 @@ func (s *EditorScreen) View(e *editor.Editor, width, height int) string {
 					cursor = len(view) - 1
 				}
 			}
-			b.WriteString(RenderDataTableWithNulls(v.Columns, view, viewNulls, cursor, s.colScroll, width-2, resH))
-			if v.Truncated {
-				b.WriteString(styles.StyleHeaderDim.Render(
-					fmt.Sprintf("  showing first %d rows (%s)", editor.MaxResultRows, formatDuration(e.Duration))) + "\n")
-			}
+			b.WriteString(RenderTabularData(v, scroll, cursor, s.colScroll, width-2, resH))
 		} else if v.Affected >= 0 {
 			noun := "rows"
 			if v.Affected == 1 {

@@ -9,6 +9,12 @@ import (
 	"github.com/agmonetti/picklock/internal/store"
 )
 
+func queryLimitsForRows(maxRows int) store.QueryLimits {
+	limits := store.DefaultQueryLimits()
+	limits.MaxRows = maxRows
+	return limits
+}
+
 func TestNeo4j_Registered(t *testing.T) {
 	cfg := conn.New(conn.DriverNeo4j)
 	cfg.Host = "127.0.0.1"
@@ -56,7 +62,7 @@ func TestNeo4j_ExecutorIsMutationAndReadOnly(t *testing.T) {
 		t.Error("'DELETE' inside a string literal must not be a mutation")
 	}
 
-	_, err := exec.Execute(context.Background(), "CREATE (n:Person)", 0, 10)
+	_, err := exec.Execute(context.Background(), "CREATE (n:Person)", 0, queryLimitsForRows(10))
 	if err == nil {
 		t.Fatal("expected mutation to be blocked in read-only mode")
 	}

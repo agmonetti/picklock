@@ -152,6 +152,9 @@ func renderRelationalStructure(sb *strings.Builder, s *store.RelationalStructure
 		if ix.Unique {
 			uniq = " UNIQUE"
 		}
+		if ix.Partial {
+			uniq += " PARTIAL"
+		}
 		line := fmt.Sprintf("  %-24s (%s)%s", ix.Name, strings.Join(ix.Columns, ", "), uniq)
 		sb.WriteString(styles.StyleSidebarItem.Render(line) + "\n")
 	}
@@ -189,6 +192,9 @@ func renderDocumentStructure(sb *strings.Builder, s *store.DocumentStructure) {
 		uniq := ""
 		if ix.Unique {
 			uniq = " UNIQUE"
+		}
+		if ix.Partial {
+			uniq += " PARTIAL"
 		}
 		sb.WriteString(styles.StyleSidebarItem.Render(fmt.Sprintf("  %-24s (%s)%s", ix.Name, strings.Join(ix.Columns, ", "), uniq)) + "\n")
 	}

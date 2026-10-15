@@ -16,6 +16,9 @@ import (
 
 // WriteCSV writes the data view as RFC 4180 CSV.
 func WriteCSV(data store.DataView, w io.Writer) error {
+	if err := store.EnsureComplete(data); err != nil {
+		return err
+	}
 	if data == nil || data.IsEmpty() {
 		return fmt.Errorf("nothing to export")
 	}
@@ -45,8 +48,25 @@ func writeTabularCSV(res *store.TabularData, w io.Writer) error {
 	if err := cw.Write(res.Columns); err != nil {
 		return err
 	}
-	for _, row := range res.Rows {
-		if err := cw.Write(row); err != nil {
+	var masked []string
+	for i, row := range res.Rows {
+		record := row
+		for j := range row {
+			if res.IsNull(i, j) {
+				if len(masked) != len(row) {
+					masked = make([]string, len(row))
+				}
+				copy(masked, row)
+				for column := range row {
+					if res.IsNull(i, column) {
+						masked[column] = ""
+					}
+				}
+				record = masked
+				break
+			}
+		}
+		if err := cw.Write(record); err != nil {
 			return err
 		}
 	}
@@ -114,6 +134,9 @@ func writeGraphCSV(g *store.GraphData, w io.Writer) error {
 
 // WriteJSON writes the data view as JSON.
 func WriteJSON(data store.DataView, w io.Writer) error {
+	if err := store.EnsureComplete(data); err != nil {
+		return err
+	}
 	if data == nil || data.IsEmpty() {
 		return fmt.Errorf("nothing to export")
 	}

@@ -12,6 +12,12 @@ import (
 	"github.com/agmonetti/picklock/internal/store"
 )
 
+func queryLimitsForRows(maxRows int) store.QueryLimits {
+	limits := store.DefaultQueryLimits()
+	limits.MaxRows = maxRows
+	return limits
+}
+
 func TestMongo_Registered(t *testing.T) {
 	// Check that DriverMongo is registered in the factory registry
 	// by attempting to create an invalid host connection (should fail on ping, not 'unknown driver')
@@ -143,7 +149,7 @@ func TestMongo_ReadOnlyBlocksMutations(t *testing.T) {
 	source := &MongoSource{readOnly: true}
 	exec := &MongoExecutor{source: source}
 
-	_, err := exec.Execute(context.Background(), "db.users.insertOne({name: 'Blocked'})", 0, 10)
+	_, err := exec.Execute(context.Background(), "db.users.insertOne({name: 'Blocked'})", 0, queryLimitsForRows(10))
 	if err == nil {
 		t.Fatal("expected mutation to be blocked in read-only mode")
 	}

@@ -45,7 +45,7 @@ func TestRenderStructureScrolledShowsAllSections(t *testing.T) {
 			ForeignKeys: []store.ForeignKey{{
 				Columns: []string{"seller_id"}, ReferencedTable: "sellers", ReferencedColumns: []string{"id"},
 			}},
-			Indexes: []store.Index{{Name: "idx_name", Columns: []string{"name"}}},
+			Indexes: []store.Index{{Name: "idx_name", Columns: []string{"name"}, Unique: true, Partial: true}},
 		},
 	}
 	first := RenderStructureScrolled(b, 0, 80, 5)
@@ -57,7 +57,7 @@ func TestRenderStructureScrolledShowsAllSections(t *testing.T) {
 	for scroll := 1; scroll <= maxScroll; scroll++ {
 		seen += "\n" + RenderStructureScrolled(b, scroll, 80, 5)
 	}
-	for _, want := range []string{"Foreign Keys", "Indexes", "idx_name"} {
+	for _, want := range []string{"Foreign Keys", "Indexes", "idx_name", "UNIQUE PARTIAL"} {
 		if !strings.Contains(seen, want) {
 			t.Errorf("scrolled structure never exposed %q in %q", want, seen)
 		}

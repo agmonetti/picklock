@@ -127,14 +127,14 @@ func (s *CassandraSource) Catalog() store.CatalogDescriptor {
 }
 
 func (s *CassandraSource) Browse(ctx context.Context, req store.BrowseRequest) (store.BrowseResponse, error) {
-	if req.ObjectName == "" {
-		return store.BrowseResponse{}, errors.New("no table specified")
+	if err := req.Validate(); err != nil {
+		return store.BrowseResponse{}, err
+	}
+	if err := req.Options.ValidateUnsupported(); err != nil {
+		return store.BrowseResponse{}, err
 	}
 
 	pageSize := req.PageSize
-	if pageSize <= 0 {
-		pageSize = 50
-	}
 
 	cql := fmt.Sprintf("SELECT * FROM %s.%s", s.keyspace, req.ObjectName)
 	query := s.session.Query(cql).WithContext(ctx).PageSize(pageSize)
@@ -383,11 +383,13 @@ func (e *CassandraExecutor) schemaColumnsFor(ctx context.Context, stmt string) [
 	return names
 }
 
-// Execute runs a CQL statement. The QueryExecutor contract passes
-// (buffer, line, maxRows): line is the cursor line (unused) and maxRows caps
-// how many rows a read query loads into memory (a hard breaker, since gocql
-// iterates every server page otherwise).
-func (e *CassandraExecutor) Execute(ctx context.Context, buffer string, _line int, maxRows int) (store.DataView, error) {
+// Execute runs a CQL statement. The cursor line is unused; limits.MaxRows caps
+// reads because gocql otherwise iterates every server page.
+// Byte budgets are a shared contract only until E6 enforces them.
+func (e *CassandraExecutor) Execute(ctx context.Context, buffer string, _line int, limits store.QueryLimits) (store.DataView, error) {
+	if err := limits.Validate(); err != nil {
+		return nil, err
+	}
 	trimmed := strings.TrimSpace(buffer)
 	if trimmed == "" {
 		return nil, errors.New("empty CQL query")
@@ -408,10 +410,7 @@ func (e *CassandraExecutor) Execute(ctx context.Context, buffer string, _line in
 		}, nil
 	}
 
-	pageSize := maxRows
-	if pageSize <= 0 {
-		pageSize = 50
-	}
+	pageSize := limits.MaxRows
 
 	iter := e.source.session.Query(trimmed).WithContext(ctx).PageSize(pageSize).Iter()
 	cols := make([]string, len(iter.Columns()))
@@ -430,7 +429,7 @@ func (e *CassandraExecutor) Execute(ctx context.Context, buffer string, _line in
 	var rows [][]string
 	truncated := false
 	for {
-		if maxRows > 0 && len(rows) >= maxRows {
+		if len(rows) >= limits.MaxRows {
 			truncated = true
 			break
 		}

@@ -64,7 +64,7 @@ func TestIntegration(t *testing.T) {
 			return
 		}
 		defer cds.Close()
-		_, _ = cds.Query().Execute(context.Background(), "MATCH (n:"+itLabel+") DETACH DELETE n", 0, 100)
+		_, _ = cds.Query().Execute(context.Background(), "MATCH (n:"+itLabel+") DETACH DELETE n", 0, queryLimitsForRows(100))
 	})
 
 	if v, err := ds.Version(ctx); err != nil || v == "" {
@@ -121,7 +121,7 @@ func TestIntegration(t *testing.T) {
 
 	// Editor queries: MATCH ... RETURN n materializes nodes
 	exec := ds.Query()
-	data, err := exec.Execute(ctx, "MATCH (n:"+itLabel+") RETURN n", 0, 100)
+	data, err := exec.Execute(ctx, "MATCH (n:"+itLabel+") RETURN n", 0, queryLimitsForRows(100))
 	if err != nil {
 		t.Fatalf("MATCH RETURN n: %v", err)
 	}
@@ -130,7 +130,7 @@ func TestIntegration(t *testing.T) {
 	}
 
 	// The result cap stops the fetch at maxRows (returns 2 nodes, not 7).
-	data, err = exec.Execute(ctx, "MATCH (n:"+itLabel+") RETURN n", 0, 2)
+	data, err = exec.Execute(ctx, "MATCH (n:"+itLabel+") RETURN n", 0, queryLimitsForRows(2))
 	if err != nil {
 		t.Fatalf("capped MATCH: %v", err)
 	}
@@ -139,7 +139,7 @@ func TestIntegration(t *testing.T) {
 	}
 
 	// Aggregate/scalar queries render as tabular data
-	data, err = exec.Execute(ctx, "MATCH (n:"+itLabel+") RETURN count(n) AS total", 0, 100)
+	data, err = exec.Execute(ctx, "MATCH (n:"+itLabel+") RETURN count(n) AS total", 0, queryLimitsForRows(100))
 	if err != nil {
 		t.Fatalf("RETURN count: %v", err)
 	}
@@ -149,13 +149,13 @@ func TestIntegration(t *testing.T) {
 
 	// False-positive regression: a read that merely contains 'CREATE' in a
 	// string literal must run.
-	data, err = exec.Execute(ctx, "MATCH (n:"+itLabel+") WHERE n.name='CREATE' RETURN n", 0, 10)
+	data, err = exec.Execute(ctx, "MATCH (n:"+itLabel+") WHERE n.name='CREATE' RETURN n", 0, queryLimitsForRows(10))
 	if err != nil {
 		t.Errorf("read with mutation word in string: %v", err)
 	}
 
 	// Mutation queries still execute and report affected counters
-	data, err = exec.Execute(ctx, "CREATE (n:"+itLabel+" {name: 'temp'})", 0, 100)
+	data, err = exec.Execute(ctx, "CREATE (n:"+itLabel+" {name: 'temp'})", 0, queryLimitsForRows(100))
 	if err != nil {
 		t.Fatalf("CREATE: %v", err)
 	}
@@ -169,7 +169,7 @@ func TestIntegration(t *testing.T) {
 // the DataSource itself classifies as mutations.
 func execSeed(t *testing.T, ds store.DataSource, cfg conn.ConnectionConfig, q string) {
 	t.Helper()
-	if _, err := ds.Query().Execute(context.Background(), q, 0, 100); err != nil {
+	if _, err := ds.Query().Execute(context.Background(), q, 0, queryLimitsForRows(100)); err != nil {
 		t.Fatalf("seed %q: %v", q, err)
 	}
 }
@@ -228,10 +228,10 @@ func TestIntegrationReadOnly(t *testing.T) {
 	defer ds.Close()
 
 	ctx := context.Background()
-	if _, err := ds.Query().Execute(ctx, "CREATE (n:PicklockRo {x: 1})", 0, 10); err == nil {
+	if _, err := ds.Query().Execute(ctx, "CREATE (n:PicklockRo {x: 1})", 0, queryLimitsForRows(10)); err == nil {
 		t.Error("CREATE in read-only must be blocked")
 	}
-	if _, err := ds.Query().Execute(ctx, "MATCH (n) RETURN count(n) LIMIT 1", 0, 10); err != nil {
+	if _, err := ds.Query().Execute(ctx, "MATCH (n) RETURN count(n) LIMIT 1", 0, queryLimitsForRows(10)); err != nil {
 		t.Errorf("read in read-only failed: %v", err)
 	}
 }

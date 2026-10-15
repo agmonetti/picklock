@@ -150,7 +150,7 @@ func TestIntegration(t *testing.T) {
 
 	// Editor queries
 	exec := ds.Query()
-	data, err := exec.Execute(ctx, "GET it:str", 0, 10)
+	data, err := exec.Execute(ctx, "GET it:str", 0, queryLimitsForRows(10))
 	if err != nil {
 		t.Fatalf("GET: %v", err)
 	}
@@ -158,7 +158,7 @@ func TestIntegration(t *testing.T) {
 		t.Errorf("GET = %v, want hello-world", data)
 	}
 
-	data, err = exec.Execute(ctx, "HGETALL it:hash", 0, 10)
+	data, err = exec.Execute(ctx, "HGETALL it:hash", 0, queryLimitsForRows(10))
 	if err != nil {
 		t.Fatalf("HGETALL: %v", err)
 	}
@@ -221,10 +221,10 @@ func TestIntegrationReadOnly(t *testing.T) {
 	defer ds.Close()
 
 	ctx := context.Background()
-	if _, err := ds.Query().Execute(ctx, "SET it:ro blocked", 0, 10); err == nil {
+	if _, err := ds.Query().Execute(ctx, "SET it:ro blocked", 0, queryLimitsForRows(10)); err == nil {
 		t.Error("SET in read-only must be blocked")
 	}
-	if _, err := ds.Query().Execute(ctx, "GET it:str", 0, 10); err != nil {
+	if _, err := ds.Query().Execute(ctx, "GET it:str", 0, queryLimitsForRows(10)); err != nil {
 		t.Errorf("GET in read-only failed: %v", err)
 	}
 }

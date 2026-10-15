@@ -154,8 +154,9 @@ func (s *Store) Indexes(table string) ([]store.Index, error) {
 	defer rows.Close()
 
 	type idxMeta struct {
-		name   string
-		unique int
+		name    string
+		unique  int
+		partial int
 	}
 	var metas []idxMeta
 	for rows.Next() {
@@ -169,7 +170,7 @@ func (s *Store) Indexes(table string) ([]store.Index, error) {
 		if err := rows.Scan(&seq, &name, &unique, &origin, &partial); err != nil {
 			return nil, fmt.Errorf("store.Indexes(%s): %w", table, err)
 		}
-		metas = append(metas, idxMeta{name: name, unique: unique})
+		metas = append(metas, idxMeta{name: name, unique: unique, partial: partial})
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -185,6 +186,7 @@ func (s *Store) Indexes(table string) ([]store.Index, error) {
 			Name:    m.name,
 			Columns: cols,
 			Unique:  m.unique == 1,
+			Partial: m.partial == 1,
 		})
 	}
 	return indexes, nil
@@ -338,6 +340,87 @@ func (s *Store) SelectTablePageContext(ctx context.Context, table string, limit,
 	}
 	defer rows.Close()
 	return store.ScanResult(rows)
+}
+
+// SelectTableOrderedPageContext pages by a validated primary-key tuple.
+func (s *Store) SelectTableOrderedPageContext(ctx context.Context, table string, orderBy []string, limit, offset int) (*store.Result, error) {
+	keys := make([]string, len(orderBy))
+	for i, key := range orderBy {
+		keys[i] = QuoteIdent(key)
+	}
+	q := fmt.Sprintf("SELECT * FROM %s ORDER BY %s LIMIT %d OFFSET %d", QuoteIdent(table), strings.Join(keys, ", "), limit, offset)
+	rows, err := s.db.QueryContext(ctx, q)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return store.ScanResult(rows)
+}
+
+func (s *Store) SelectTableBrowsePageContext(
+	ctx context.Context,
+	req store.BrowseRequest,
+	columns []store.Column,
+	orderBy, identityColumns []string,
+	keysetColumn string,
+) (*store.Result, error) {
+	previewBytes := req.Options.PreviewBytes
+	if previewBytes == 0 {
+		previewBytes = store.DefaultBrowsePreviewBytes
+	}
+	var cursorValue any
+	if keysetColumn != "" && req.Cursor != "" {
+		for _, column := range columns {
+			if column.Name != keysetColumn {
+				continue
+			}
+			value, err := store.ParseBrowseCursor(column, req.Cursor)
+			if err != nil {
+				return nil, err
+			}
+			cursorValue = value
+			break
+		}
+		if cursorValue == nil {
+			return nil, fmt.Errorf("unknown keyset column %q", keysetColumn)
+		}
+	}
+	dialect := store.RelationalSQLDialect{
+		QuoteIdentifier: QuoteIdent,
+		BindVariable:    func(int) string { return "?" },
+		Pagination:      func(limit, offset int) string { return fmt.Sprintf("LIMIT %d OFFSET %d", limit, offset) },
+	}
+	project := func(column store.Column, limit int) store.SQLBrowseProjection {
+		name := QuoteIdent(column.Name)
+		return store.SQLBrowseProjection{
+			ValueExpr: fmt.Sprintf(
+				"CASE WHEN typeof(%s) IN ('text','blob') THEN substr(%s, 1, %d) ELSE %s END",
+				name, name, limit, name,
+			),
+			NullExpr: fmt.Sprintf("CASE WHEN %s IS NULL THEN 1 ELSE 0 END", name),
+			PreviewExpr: fmt.Sprintf(
+				"CASE WHEN typeof(%s) IN ('text','blob') AND length(CAST(%s AS BLOB)) > %d THEN 1 ELSE 0 END",
+				name, name, limit,
+			),
+			TextExpr: fmt.Sprintf("CASE WHEN typeof(%s)='text' THEN 1 ELSE 0 END", name),
+			TypeExpr: fmt.Sprintf(
+				"CASE WHEN typeof(%s) IN ('text','blob') THEN upper(typeof(%s)) ELSE '' END",
+				name, name,
+			),
+		}
+	}
+	query, args, layout, err := store.BuildRelationalBrowseProjectionQuery(
+		req, columns, orderBy, identityColumns, keysetColumn, cursorValue, dialect, previewBytes, project,
+	)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return store.ScanBrowseProjection(rows, layout, req.ObjectName)
 }
 
 // SelectTableKeysetPage returns the page after cursor ordered by the key.

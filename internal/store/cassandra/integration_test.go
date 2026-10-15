@@ -164,7 +164,7 @@ func TestIntegration(t *testing.T) {
 
 	// Editor queries: SELECT with a hard maxRows cap (no unbounded fetch)
 	exec := ds.Query()
-	data, err := exec.Execute(ctx, "SELECT * FROM it_tbl", 0, 2)
+	data, err := exec.Execute(ctx, "SELECT * FROM it_tbl", 0, queryLimitsForRows(2))
 	if err != nil {
 		t.Fatalf("SELECT capped: %v", err)
 	}
@@ -174,7 +174,7 @@ func TestIntegration(t *testing.T) {
 	}
 
 	// Applied CQL with a predicate
-	data, err = exec.Execute(ctx, "SELECT val FROM it_tbl WHERE pk = 'p1'", 0, 100)
+	data, err = exec.Execute(ctx, "SELECT val FROM it_tbl WHERE pk = 'p1'", 0, queryLimitsForRows(100))
 	if err != nil {
 		t.Fatalf("SELECT predicate: %v", err)
 	}
@@ -200,7 +200,7 @@ func TestIntegration(t *testing.T) {
 	if len(tabE.Columns) != 2 || tabE.Columns[0] != "k" || tabE.Columns[1] != "v" {
 		t.Errorf("empty table columns = %v, want [k v]", tabE.Columns)
 	}
-	data, err = exec.Execute(ctx, "SELECT * FROM it_empty", 0, 10)
+	data, err = exec.Execute(ctx, "SELECT * FROM it_empty", 0, queryLimitsForRows(10))
 	if err != nil {
 		t.Fatalf("SELECT empty table: %v", err)
 	}
@@ -274,10 +274,10 @@ func TestIntegrationReadOnly(t *testing.T) {
 	defer ds.Close()
 
 	ctx := context.Background()
-	if _, err := ds.Query().Execute(ctx, "INSERT INTO it_tbl (pk, cc, val) VALUES ('p2', now(), 'x')", 0, 10); err == nil {
+	if _, err := ds.Query().Execute(ctx, "INSERT INTO it_tbl (pk, cc, val) VALUES ('p2', now(), 'x')", 0, queryLimitsForRows(10)); err == nil {
 		t.Error("INSERT in read-only must be blocked")
 	}
-	if _, err := ds.Query().Execute(ctx, "SELECT * FROM system.local", 0, 10); err != nil {
+	if _, err := ds.Query().Execute(ctx, "SELECT * FROM system.local", 0, queryLimitsForRows(10)); err != nil {
 		t.Errorf("read in read-only failed: %v", err)
 	}
 }

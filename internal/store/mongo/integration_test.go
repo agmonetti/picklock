@@ -140,7 +140,7 @@ func TestIntegration(t *testing.T) {
 
 	// Editor queries: the find path must NOT skip the first rows
 	exec := ds.Query()
-	data, err := exec.Execute(ctx, "db."+coll+".find({})", 0, 3)
+	data, err := exec.Execute(ctx, "db."+coll+".find({})", 0, queryLimitsForRows(3))
 	if err != nil {
 		t.Fatalf("find({}) maxRows=3: %v", err)
 	}
@@ -149,7 +149,7 @@ func TestIntegration(t *testing.T) {
 	}
 
 	// Unquoted shell-style filter (USAGE.md documents this exact syntax)
-	data, err = exec.Execute(ctx, "db."+coll+".find({ num: { $gt: 5 } })", 0, 100)
+	data, err = exec.Execute(ctx, "db."+coll+".find({ num: { $gt: 5 } })", 0, queryLimitsForRows(100))
 	if err != nil {
 		t.Fatalf("find with unquoted keys: %v", err)
 	}
@@ -158,7 +158,7 @@ func TestIntegration(t *testing.T) {
 	}
 
 	// Strict JSON keeps working
-	data, err = exec.Execute(ctx, `db.`+coll+`.find({"num": 1})`, 0, 100)
+	data, err = exec.Execute(ctx, `db.`+coll+`.find({"num": 1})`, 0, queryLimitsForRows(100))
 	if err != nil {
 		t.Fatalf("find strict JSON: %v", err)
 	}
@@ -167,7 +167,7 @@ func TestIntegration(t *testing.T) {
 	}
 
 	// countDocuments
-	data, err = exec.Execute(ctx, "db."+coll+".countDocuments({})", 0, 100)
+	data, err = exec.Execute(ctx, "db."+coll+".countDocuments({})", 0, queryLimitsForRows(100))
 	if err != nil {
 		t.Fatalf("countDocuments: %v", err)
 	}
@@ -214,7 +214,7 @@ func TestIntegrationReadOnly(t *testing.T) {
 	defer ds.Close()
 
 	ctx := context.Background()
-	_, err = ds.Query().Execute(ctx, "db.nonexistent.insertOne({x: 1})", 0, 10)
+	_, err = ds.Query().Execute(ctx, "db.nonexistent.insertOne({x: 1})", 0, queryLimitsForRows(10))
 	if err == nil || !containsStr(err.Error(), "read-only") {
 		t.Errorf("insertOne in read-only: err = %v, want a read-only error", err)
 	}
@@ -224,7 +224,7 @@ func TestIntegrationReadOnly(t *testing.T) {
 	mongoSeed(t, cfg, coll, 1)
 	defer mongoDrop(t, cfg, coll)
 
-	data, err := ds.Query().Execute(ctx, "db."+coll+".find({})", 0, 10)
+	data, err := ds.Query().Execute(ctx, "db."+coll+".find({})", 0, queryLimitsForRows(10))
 	if err != nil || lenDocData(data) != 1 {
 		t.Errorf("read query in read-only = docs %d err %v, want 1 row nil err", lenDocData(data), err)
 	}

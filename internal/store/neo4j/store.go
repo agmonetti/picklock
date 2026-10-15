@@ -137,8 +137,11 @@ func (s *Neo4jSource) Catalog() store.CatalogDescriptor {
 }
 
 func (s *Neo4jSource) Browse(ctx context.Context, req store.BrowseRequest) (store.BrowseResponse, error) {
-	if req.ObjectName == "" {
-		return store.BrowseResponse{}, errors.New("no label specified")
+	if err := req.Validate(); err != nil {
+		return store.BrowseResponse{}, err
+	}
+	if err := req.Options.ValidateUnsupported(); err != nil {
+		return store.BrowseResponse{}, err
 	}
 
 	session := s.driver.NewSession(ctx, neo4jdriver.SessionConfig{
@@ -161,9 +164,6 @@ func (s *Neo4jSource) Browse(ctx context.Context, req store.BrowseRequest) (stor
 	}
 
 	limit := req.PageSize
-	if limit <= 0 {
-		limit = 50
-	}
 	skip := req.Page * limit
 
 	// 2. Fetch nodes for the page
@@ -556,7 +556,10 @@ func (e *Neo4jExecutor) SplitStatements(buffer string) []store.Statement {
 
 // Execute runs a Cypher query. If a multi-statement buffer is provided,
 // it executes the statement at line using SplitStatements / StatementAt.
-func (e *Neo4jExecutor) Execute(ctx context.Context, buffer string, line int, maxRows int) (store.DataView, error) {
+func (e *Neo4jExecutor) Execute(ctx context.Context, buffer string, line int, limits store.QueryLimits) (store.DataView, error) {
+	if err := limits.Validate(); err != nil {
+		return nil, err
+	}
 	trimmed := strings.TrimSpace(buffer)
 	if trimmed == "" {
 		return nil, errors.New("empty Cypher query")
@@ -602,7 +605,7 @@ func (e *Neo4jExecutor) Execute(ctx context.Context, buffer string, line int, ma
 	var nodes []store.GraphNode
 	truncated := false
 	for result.Next(ctx) {
-		if maxRows > 0 && len(rows) >= maxRows {
+		if len(rows) >= limits.MaxRows {
 			truncated = true
 			break
 		}

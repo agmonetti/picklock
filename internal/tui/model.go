@@ -116,15 +116,19 @@ type Model struct {
 	warn            string // advisory notice, rendered in amber below the content
 	msgSeq          int    // sequence token to invalidate older clear timers
 
-	// detail view ("v"): a snapshot of the selected item with full values
-	showDetail   bool
-	detailCursor int
-	detailScroll int
-	detailTitle  string
-	detailCols   []string
-	detailVals   []string
-	detailDoc    string // formatted JSON document preview
-	detailGraph  *store.GraphNode
+	// Detail borrows retained values; metadata never contains a second payload.
+	showDetail             bool
+	detailCursor           int
+	detailScroll           int
+	detailTitle            string
+	detailCols             []string
+	detailVals             []string
+	detailDoc              string // formatted JSON document preview
+	detailGraph            *store.GraphNode
+	detailNulls            []bool
+	detailIncomplete       map[int]store.IncompleteCell
+	detailItemIncomplete   *store.IncompleteCell
+	detailIncompleteReason string
 
 	// export prompt ("alt+e"): a centered input for the target filename
 	exporting   bool

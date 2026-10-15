@@ -134,11 +134,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.deleteConnection(msg.Name)
 
 	case screens.SettingsMsg:
-		m.prefs.QueryTimeoutSeconds = msg.QueryTimeoutSeconds
-		if err := m.prefs.Save(); err != nil {
+		p := msg.Prefs
+		p.SidebarWidth = m.prefs.SidebarWidth
+		p.EditorHeight = m.prefs.EditorHeight
+		if err := p.Save(); err != nil {
 			m.settings.SetError(err.Error())
 			return m, nil
 		}
+		m.prefs = p
 		m.leaveSettings()
 
 	case screens.SettingsBackMsg:

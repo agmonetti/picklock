@@ -39,15 +39,18 @@ type Index struct {
 	Name    string
 	Columns []string
 	Unique  bool
+	Partial bool // A filtered/partial index does not uniquely identify every row.
 }
 
 // Result is the legacy outcome of a query kept for internal relational stores.
 type Result struct {
-	Columns   []string
-	Rows      [][]string
-	Affected  int64 // rows affected by an Exec; -1 when not applicable (read query)
-	Truncated bool
-	Nulls     [][]bool
+	Columns    []string
+	Rows       [][]string
+	Affected   int64 // rows affected by an Exec; -1 when not applicable
+	Truncated  bool
+	Nulls      [][]bool
+	Incomplete map[CellPosition]IncompleteCell
+	RowRefs    []*RowReference
 }
 
 // --- Multi-Paradigm DataView Results ---
@@ -67,6 +70,10 @@ type TabularData struct {
 	Affected  int64 // >= 0 for write queries, -1 for read queries
 	Truncated bool
 	TotalRows int64 // -1 if unknown / unbounded
+	// Only incomplete cells carry metadata; Rows contains one value/prefix.
+	Incomplete map[CellPosition]IncompleteCell `json:"-"`
+	RowRefs    []*RowReference                 `json:"-"` // nil entry means no reliable identity
+	Status     ResultStatus                    `json:"-"`
 }
 
 func (t *TabularData) dataView() {}
@@ -93,15 +100,17 @@ func (t *TabularData) IsEmpty() bool {
 
 // DocumentItem represents a single document (e.g. MongoDB BSON/JSON document).
 type DocumentItem struct {
-	ID      string // e.g. ObjectId("64a...")
-	Summary string // Compact preview string
-	RawJSON string // Formatted indented JSON
+	ID         string          // e.g. ObjectId("64a...")
+	Summary    string          // Compact preview string
+	RawJSON    string          // Formatted indented JSON
+	Incomplete *IncompleteCell `json:"-"`
 }
 
 // DocumentData represents a list of hierarchical JSON/BSON documents.
 type DocumentData struct {
 	Documents []DocumentItem
-	TotalDocs int64 // -1 if unknown
+	TotalDocs int64        // -1 if unknown
+	Status    ResultStatus `json:"-"`
 }
 
 func (d *DocumentData) dataView() {}
@@ -121,9 +130,10 @@ func (d *DocumentData) IsEmpty() bool {
 
 // KVEntry represents an entry inside a key (Hash field, List element, Set member, ZSet item).
 type KVEntry struct {
-	Index string // Field name, list index (0, 1..), or rank
-	Value string // Field value, element, or member
-	Extra string // Optional ZSet score or stream timestamp
+	Index      string          // Field name, list index (0, 1..), or rank
+	Value      string          // Field value, element, or member
+	Extra      string          // Optional ZSet score or stream timestamp
+	Incomplete *IncompleteCell `json:"-"`
 }
 
 // KeyValueData represents Redis key structures.
@@ -133,6 +143,7 @@ type KeyValueData struct {
 	TTL      string            // "-1 (no TTL)", "847s", "expired"
 	Metadata map[string]string // Memory, encoding, length
 	Entries  []KVEntry
+	Status   ResultStatus `json:"-"`
 }
 
 func (k *KeyValueData) dataView() {}
@@ -152,6 +163,7 @@ type GraphNode struct {
 	Labels     []string
 	Properties map[string]string
 	Incident   []GraphEdgeSummary
+	Incomplete map[string]IncompleteCell `json:"-"` // property name
 }
 
 // GraphEdge represents a directed relationship between two nodes.
@@ -161,6 +173,7 @@ type GraphEdge struct {
 	StartNode  string
 	EndNode    string
 	Properties map[string]string
+	Incomplete map[string]IncompleteCell `json:"-"` // property name
 }
 
 // GraphEdgeSummary represents an incident relationship attached to a node.
@@ -173,8 +186,9 @@ type GraphEdgeSummary struct {
 
 // GraphData represents nodes and relationships.
 type GraphData struct {
-	Nodes []GraphNode
-	Edges []GraphEdge
+	Nodes  []GraphNode
+	Edges  []GraphEdge
+	Status ResultStatus `json:"-"`
 }
 
 func (g *GraphData) dataView() {}
@@ -195,8 +209,10 @@ func (g *GraphData) IsEmpty() bool {
 
 // RawTextData represents plain command output, diagnostics, or status text.
 type RawTextData struct {
-	Title string
-	Text  string
+	Title      string
+	Text       string
+	Incomplete *IncompleteCell `json:"-"`
+	Status     ResultStatus    `json:"-"`
 }
 
 func (r *RawTextData) dataView() {}
@@ -308,6 +324,7 @@ type BrowseRequest struct {
 	PageSize   int
 	Page       int
 	Cursor     string
+	Options    BrowseOptions
 }
 
 // BrowseResponse returns the page of data and cursor advancement.
@@ -324,7 +341,7 @@ type QueryExecutor interface {
 	Language() string
 	PromptTitle() string
 	Placeholder() string
-	Execute(ctx context.Context, buffer string, line int, maxRows int) (DataView, error)
+	Execute(ctx context.Context, buffer string, line int, limits QueryLimits) (DataView, error)
 	IsMutation(statement string) bool
 }
 

@@ -77,10 +77,10 @@ func TestModel_GlobalReadOnlyForcesReadOnly(t *testing.T) {
 		t.Fatalf("store not open")
 	}
 	// the file itself is writable, but --read-only must open it mode=ro
-	if _, err := m.store.Query().Execute(context.Background(), "CREATE TABLE blocked (id INT)", 0, 100); err == nil {
+	if _, err := m.store.Query().Execute(context.Background(), "CREATE TABLE blocked (id INT)", 0, queryLimitsForRows(100)); err == nil {
 		t.Error("write must be blocked by global read-only")
 	}
-	if res, err := m.store.Query().Execute(context.Background(), "SELECT COUNT(*) FROM users", 0, 100); err != nil {
+	if res, err := m.store.Query().Execute(context.Background(), "SELECT COUNT(*) FROM users", 0, queryLimitsForRows(100)); err != nil {
 		t.Errorf("read in read-only mode failed: %v", err)
 	} else if tab, ok := res.(*store.TabularData); !ok || len(tab.Rows) == 0 {
 		t.Errorf("read in read-only mode returned unexpected: %v", res)

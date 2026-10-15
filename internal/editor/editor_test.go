@@ -19,7 +19,7 @@ func newTestStore(t *testing.T) store.DataSource {
 		t.Fatalf("store.New: %v", err)
 	}
 	t.Cleanup(func() { st.Close() })
-	if _, err := st.Query().Execute(context.Background(), `CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT)`, 0, 100); err != nil {
+	if _, err := st.Query().Execute(context.Background(), `CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT)`, 0, queryLimitsForRows(100)); err != nil {
 		t.Fatalf("create: %v", err)
 	}
 	return st
@@ -117,7 +117,7 @@ func TestEditor_ExecuteOnlyFirstStatement(t *testing.T) {
 		t.Fatalf("Execute: %v", err)
 	}
 	// the second statement must not have run
-	res, err := st.Query().Execute(context.Background(), "SELECT COUNT(*) FROM t", 0, 100)
+	res, err := st.Query().Execute(context.Background(), "SELECT COUNT(*) FROM t", 0, queryLimitsForRows(100))
 	if err != nil {
 		t.Fatalf("Count: %v", err)
 	}
@@ -133,7 +133,7 @@ func TestEditor_ExecuteAtSelectsStatementAtCursor(t *testing.T) {
 	e.Buffer = "SELECT 1;\nSELECT 2;\nSELECT * FROM users"
 
 	// cursor on line 2 (0-based): the third statement
-	if err := e.ExecuteAt(context.Background(), st, 2); err != nil {
+	if err := e.ExecuteAt(context.Background(), st, 2, store.DefaultQueryLimits()); err != nil {
 		t.Fatalf("ExecuteAt: %v", err)
 	}
 	tab, ok := e.Data.(*store.TabularData)
@@ -146,7 +146,7 @@ func TestEditor_ExecuteAtSingleStatementIgnoresLine(t *testing.T) {
 	st := newTestStore(t)
 	e := New()
 	e.Buffer = "INSERT INTO users (name) VALUES ('X')"
-	if err := e.ExecuteAt(context.Background(), st, 5); err != nil {
+	if err := e.ExecuteAt(context.Background(), st, 5, store.DefaultQueryLimits()); err != nil {
 		t.Fatalf("ExecuteAt: %v", err)
 	}
 	tab, ok := e.Data.(*store.TabularData)
@@ -235,24 +235,31 @@ func TestEditor_WroteFlag(t *testing.T) {
 	}
 }
 
+func queryLimitsForRows(maxRows int) store.QueryLimits {
+	limits := store.DefaultQueryLimits()
+	limits.MaxRows = maxRows
+	return limits
+}
+
 func TestEditor_ResultTruncatedOverLimit(t *testing.T) {
 	st := newTestStore(t)
-	for i := 0; i < MaxResultRows+5; i++ {
-		if _, err := st.Query().Execute(context.Background(), "INSERT INTO users (name) VALUES ('u')", 0, 100); err != nil {
+	limits := queryLimitsForRows(3)
+	for i := 0; i < limits.MaxRows+5; i++ {
+		if _, err := st.Query().Execute(context.Background(), "INSERT INTO users (name) VALUES ('u')", 0, queryLimitsForRows(100)); err != nil {
 			t.Fatalf("insert: %v", err)
 		}
 	}
 	e := New()
 	e.Buffer = "SELECT * FROM users"
-	if err := e.Execute(st); err != nil {
+	if err := e.ExecuteAt(context.Background(), st, 0, limits); err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
 	tab, ok := e.Data.(*store.TabularData)
 	if !ok || !tab.Truncated {
 		t.Errorf("tab.Truncated = %v, want true", tab)
 	}
-	if len(tab.Rows) != MaxResultRows {
-		t.Errorf("Rows = %d, want %d", len(tab.Rows), MaxResultRows)
+	if len(tab.Rows) != limits.MaxRows {
+		t.Errorf("Rows = %d, want %d", len(tab.Rows), limits.MaxRows)
 	}
 }
 
@@ -286,7 +293,6 @@ func TestEditor_SplitStatementsSpecialQuotes(t *testing.T) {
 type recordingStore struct {
 	buffer string
 	line   int
-	max    int
 }
 
 func (r *recordingStore) Driver() conn.Driver { return conn.DriverCassandra }
@@ -317,10 +323,9 @@ func (e *recordingExec) Placeholder() string { return "SELECT ...;" }
 func (e *recordingExec) IsMutation(string) bool {
 	return false
 }
-func (e *recordingExec) Execute(_ context.Context, buffer string, line, maxRows int) (store.DataView, error) {
+func (e *recordingExec) Execute(_ context.Context, buffer string, line int, limits store.QueryLimits) (store.DataView, error) {
 	e.r.buffer = buffer
 	e.r.line = line
-	e.r.max = maxRows
 	return &store.TabularData{Columns: []string{"c"}, Rows: [][]string{{"ok"}}}, nil
 }
 
@@ -339,7 +344,7 @@ func TestEditor_ExecuteSendsOnlyStatementAtCursor(t *testing.T) {
 		e := New()
 		e.Buffer = "SELECT 1;\nSELECT 2;\nSELECT * FROM users"
 
-		if err := e.ExecuteAt(context.Background(), ds, tc.line); err != nil {
+		if err := e.ExecuteAt(context.Background(), ds, tc.line, store.DefaultQueryLimits()); err != nil {
 			t.Fatalf("ExecuteAt(line %d): %v", tc.line, err)
 		}
 		if ds.buffer != tc.want {
@@ -360,7 +365,7 @@ func TestEditor_ExecuteSendsMultilineStatementWhole(t *testing.T) {
 	stmt := "SELECT *\nFROM users\nWHERE id = 1"
 	e.Buffer = stmt
 
-	if err := e.ExecuteAt(context.Background(), ds, 1); err != nil {
+	if err := e.ExecuteAt(context.Background(), ds, 1, store.DefaultQueryLimits()); err != nil {
 		t.Fatalf("ExecuteAt: %v", err)
 	}
 	if ds.buffer != stmt {
@@ -373,7 +378,7 @@ func TestEditor_CommentOnlyBufferDoesNotExecute(t *testing.T) {
 	e := New()
 	e.Buffer = "-- just a comment\n/* and another */"
 
-	if err := e.ExecuteAt(context.Background(), ds, 0); err != nil {
+	if err := e.ExecuteAt(context.Background(), ds, 0, store.DefaultQueryLimits()); err != nil {
 		t.Fatalf("ExecuteAt: %v", err)
 	}
 	if ds.buffer != "" {
@@ -413,7 +418,7 @@ func TestEditor_ExecuteUsesStatementSplitterWhenAvailable(t *testing.T) {
 	e.Buffer = "HGETALL instancia:101\nSMEMBERS tareas_pendientes:rol:soporte"
 
 	// Cursor on line 0 -> executes HGETALL
-	if err := e.ExecuteAt(context.Background(), ds, 0); err != nil {
+	if err := e.ExecuteAt(context.Background(), ds, 0, store.DefaultQueryLimits()); err != nil {
 		t.Fatalf("ExecuteAt(0): %v", err)
 	}
 	if ds.buffer != "HGETALL instancia:101" {
@@ -424,7 +429,7 @@ func TestEditor_ExecuteUsesStatementSplitterWhenAvailable(t *testing.T) {
 	}
 
 	// Cursor on line 1 -> executes SMEMBERS
-	if err := e.ExecuteAt(context.Background(), ds, 1); err != nil {
+	if err := e.ExecuteAt(context.Background(), ds, 1, store.DefaultQueryLimits()); err != nil {
 		t.Fatalf("ExecuteAt(1): %v", err)
 	}
 	if ds.buffer != "SMEMBERS tareas_pendientes:rol:soporte" {
@@ -432,5 +437,18 @@ func TestEditor_ExecuteUsesStatementSplitterWhenAvailable(t *testing.T) {
 	}
 	if e.LastQuery != "SMEMBERS tareas_pendientes:rol:soporte" {
 		t.Errorf("got e.LastQuery = %q, want 'SMEMBERS tareas_pendientes:rol:soporte'", e.LastQuery)
+	}
+}
+
+func TestEditorRejectsInvalidLimitsBeforeExecution(t *testing.T) {
+	ds := &recordingStore{}
+	e := New()
+	e.Buffer = "SELECT 1"
+	e.Data = &store.TabularData{}
+	if err := e.ExecuteAt(context.Background(), ds, 0, store.QueryLimits{}); err == nil {
+		t.Fatal("expected invalid limits error")
+	}
+	if ds.buffer != "" || e.Data != nil || e.Error == "" {
+		t.Errorf("invalid limits executed or left stale data: executor=%+v editor=%+v", ds, e)
 	}
 }

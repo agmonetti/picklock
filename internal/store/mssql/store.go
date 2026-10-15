@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"net/url"
+	"strings"
 	"time"
 
 	_ "github.com/microsoft/go-mssqldb" // registers the "sqlserver" driver
@@ -143,7 +144,7 @@ func (s *Store) Columns(table string) ([]store.Column, error) {
 // Indexes returns the indexes of a table.
 func (s *Store) Indexes(table string) ([]store.Index, error) {
 	rows, err := s.db.Query(`
-		SELECT i.name, col.name, i.is_unique
+		SELECT i.name, col.name, i.is_unique, i.has_filter
 		FROM sys.indexes i
 		JOIN sys.index_columns ic
 		  ON i.object_id = ic.object_id AND i.index_id = ic.index_id
@@ -163,13 +164,12 @@ func (s *Store) Indexes(table string) ([]store.Index, error) {
 	var order []string
 	for rows.Next() {
 		var name, col string
-		var unique bool
-		if err := rows.Scan(&name, &col, &unique); err != nil {
-			return nil, fmt.Errorf("store.Indexes(%s): %w", table, err)
+		var unique, partial bool
+		if err := rows.Scan(&name, &col, &unique, &partial); err != nil {
 		}
 		ix, ok := byName[name]
 		if !ok {
-			ix = &store.Index{Name: name, Unique: unique}
+			ix = &store.Index{Name: name, Unique: unique, Partial: partial}
 			byName[name] = ix
 			order = append(order, name)
 		}
@@ -327,6 +327,116 @@ func (s *Store) SelectTablePageContext(ctx context.Context, table string, limit,
 	}
 	defer rows.Close()
 	return store.ScanResult(rows)
+}
+
+// SelectTableOrderedPageContext pages by a validated primary-key tuple.
+func (s *Store) SelectTableOrderedPageContext(ctx context.Context, table string, orderBy []string, limit, offset int) (*store.Result, error) {
+	keys := make([]string, len(orderBy))
+	for i, key := range orderBy {
+		keys[i] = QuoteIdent(key)
+	}
+	q := fmt.Sprintf("SELECT * FROM %s ORDER BY %s OFFSET %d ROWS FETCH NEXT %d ROWS ONLY", QuoteIdent(table), strings.Join(keys, ", "), offset, limit)
+	rows, err := s.db.QueryContext(ctx, q)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return store.ScanResult(rows)
+}
+
+// SelectTableBrowsePageContext returns a bounded, projected browse page.
+func (s *Store) SelectTableBrowsePageContext(ctx context.Context, req store.BrowseRequest, columns []store.Column, orderBy, identityColumns []string, keysetColumn string) (*store.Result, error) {
+	previewBytes := req.Options.PreviewBytes
+	if previewBytes == 0 {
+		previewBytes = store.DefaultBrowsePreviewBytes
+	}
+
+	var cursorValue any
+	if req.Cursor != "" {
+		if keysetColumn == "" {
+			return nil, fmt.Errorf("SQL Server browse cursor requires a reliable keyset column")
+		}
+		var keyColumn store.Column
+		found := false
+		for _, column := range columns {
+			if column.Name == keysetColumn {
+				keyColumn = column
+				found = true
+				break
+			}
+		}
+		if !found {
+			return nil, fmt.Errorf("unknown SQL Server browse keyset column %q", keysetColumn)
+		}
+		value, err := store.ParseBrowseCursor(keyColumn, req.Cursor)
+		if err != nil {
+			return nil, fmt.Errorf("invalid SQL Server browse cursor: %w", err)
+		}
+		cursorValue = value
+	}
+
+	query, args, layout, err := store.BuildRelationalBrowseProjectionQuery(req, columns, orderBy, identityColumns, keysetColumn, cursorValue, store.RelationalSQLDialect{
+		QuoteIdentifier: QuoteIdent,
+		BindVariable:    func(position int) string { return fmt.Sprintf("@p%d", position) },
+		Pagination: func(limit, offset int) string {
+			return fmt.Sprintf("OFFSET %d ROWS FETCH NEXT %d ROWS ONLY", offset, limit)
+		},
+	}, previewBytes, func(column store.Column, maxBytes int) store.SQLBrowseProjection {
+		name := QuoteIdent(column.Name)
+		typ := strings.ToLower(column.Type)
+		projection := store.SQLBrowseProjection{Type: column.Type}
+		var valueExpr, sizeExpr string
+		sizeLimit := maxBytes
+		switch typ {
+		case "char", "varchar", "text":
+			valueExpr = fmt.Sprintf("SUBSTRING(%s, 1, %d)", name, maxBytes)
+			sizeExpr = name
+			projection.Text = true
+		case "nchar", "nvarchar", "ntext":
+			valueExpr = fmt.Sprintf("SUBSTRING(%s, 1, %d)", name, maxBytes)
+			sizeExpr = name
+			sizeLimit = maxBytes * 2
+			projection.Text = true
+		case "xml", "sql_variant":
+			sizeExpr = fmt.Sprintf("CONVERT(nvarchar(max), %s)", name)
+			valueExpr = fmt.Sprintf("SUBSTRING(%s, 1, %d)", sizeExpr, maxBytes)
+			sizeLimit = maxBytes * 2
+			projection.Text = true
+		case "geography", "geometry":
+			sizeExpr = name + ".STAsText()"
+			valueExpr = fmt.Sprintf("SUBSTRING(%s, 1, %d)", sizeExpr, maxBytes)
+			sizeLimit = maxBytes * 2
+			projection.Text = true
+		case "hierarchyid":
+			sizeExpr = name + ".ToString()"
+			valueExpr = fmt.Sprintf("SUBSTRING(%s, 1, %d)", sizeExpr, maxBytes)
+			sizeLimit = maxBytes * 2
+			projection.Text = true
+		case "binary", "varbinary", "image", "timestamp", "rowversion":
+			valueExpr = fmt.Sprintf("SUBSTRING(%s, 1, %d)", name, maxBytes)
+			sizeExpr = name
+		case "bit", "tinyint", "smallint", "int", "bigint", "decimal", "numeric",
+			"money", "smallmoney", "float", "real", "date", "time", "datetime",
+			"datetime2", "smalldatetime", "datetimeoffset", "uniqueidentifier":
+			return projection
+		default:
+			projection.Error = "metadata does not expose a supported base type"
+			return projection
+		}
+		projection.ValueExpr = valueExpr
+		projection.NullExpr = fmt.Sprintf("CASE WHEN %s IS NULL THEN 1 ELSE 0 END", name)
+		projection.PreviewExpr = fmt.Sprintf("CASE WHEN DATALENGTH(%s) > %d THEN 1 ELSE 0 END", sizeExpr, sizeLimit)
+		return projection
+	})
+	if err != nil {
+		return nil, err
+	}
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return store.ScanBrowseProjection(rows, layout, req.ObjectName)
 }
 
 // SelectTableKeysetPage returns the page after cursor ordered by the key.

@@ -51,6 +51,7 @@ func (m *Model) runBrowserOp(op func(b *browser.Browser, st store.DataSource, ct
 func (m *Model) loadBrowserCmd(st store.DataSource) tea.Cmd {
 	token := m.queryID
 	timeout := time.Duration(m.prefs.QueryTimeout()) * time.Second
+	pageSize := m.prefs.BrowsePageSize
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	m.cancelConnect()
 	m.connectCancel = cancel
@@ -60,6 +61,15 @@ func (m *Model) loadBrowserCmd(st store.DataSource) tea.Cmd {
 			b, err := browser.New(ctx, st)
 			if err != nil {
 				return browserDoneMsg{token: token, err: err, load: true}
+			}
+			if len(b.Items) > 0 {
+				item, err := b.PrepareItem(ctx, b.Items[0].Name, st)
+				if err != nil {
+					return browserDoneMsg{token: token, err: err, load: true}
+				}
+				if err := b.OpenPrepared(ctx, item, store.BrowseOptions{}, pageSize, st); err != nil {
+					return browserDoneMsg{token: token, err: err, load: true}
+				}
 			}
 			return browserDoneMsg{token: token, b: b, load: true}
 		},

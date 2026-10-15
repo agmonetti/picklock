@@ -2,15 +2,99 @@ package store
 
 import (
 	"context"
+	"encoding/hex"
+	"fmt"
 	"github.com/agmonetti/picklock/internal/conn"
 	"sort"
 	"strings"
+	"time"
 )
 
 // RelationalAdapter adapts an internal relational Store to the universal DataSource interface.
 type RelationalAdapter struct {
 	store Store
 	cfg   conn.ConnectionConfig
+}
+
+type projectedBrowsePageStore interface {
+	SelectTableBrowsePageContext(
+		ctx context.Context,
+		req BrowseRequest,
+		columns []Column,
+		orderBy, identityColumns []string,
+		keysetColumn string,
+	) (*Result, error)
+}
+
+func trimBrowseLookahead(res *Result, pageSize int) ([][]string, [][]bool, bool) {
+	rows := res.Rows
+	nulls := res.Nulls
+	hasNext := len(rows) > pageSize
+	if hasNext {
+		for i := pageSize; i < len(rows); i++ {
+			rows[i] = nil
+		}
+		rows = rows[:pageSize]
+		for i := pageSize; i < len(nulls); i++ {
+			nulls[i] = nil
+		}
+		nulls = nulls[:min(pageSize, len(nulls))]
+		for position := range res.Incomplete {
+			if position.Row >= pageSize {
+				delete(res.Incomplete, position)
+			}
+		}
+		for i := pageSize; i < len(res.RowRefs); i++ {
+			res.RowRefs[i] = nil
+		}
+		res.RowRefs = res.RowRefs[:min(pageSize, len(res.RowRefs))]
+	}
+	return rows, nulls, hasNext
+}
+
+func primaryKeyColumns(columns []Column) []string {
+	keys := make([]string, 0, len(columns))
+	for _, column := range columns {
+		if column.PK {
+			keys = append(keys, column.Name)
+		}
+	}
+	return keys
+}
+
+func uniqueNotNullIndex(columns []Column, indexes []Index) []string {
+	notNull := make(map[string]bool, len(columns))
+	for _, column := range columns {
+		notNull[column.Name] = column.NotNull || column.PK
+	}
+	for _, index := range indexes {
+		if !index.Unique || index.Partial || len(index.Columns) == 0 {
+			continue
+		}
+		reliable := true
+		for _, name := range index.Columns {
+			if !notNull[name] {
+				reliable = false
+				break
+			}
+		}
+		if reliable {
+			return append([]string(nil), index.Columns...)
+		}
+	}
+	return nil
+}
+
+func (a *RelationalAdapter) stableBrowseOrder(table string, columns []Column) []string {
+	orderBy := primaryKeyColumns(columns)
+	if len(orderBy) > 0 {
+		return orderBy
+	}
+	indexes, err := a.store.Indexes(table)
+	if err != nil {
+		return nil
+	}
+	return uniqueNotNullIndex(columns, indexes)
 }
 
 // NewRelationalAdapter wraps a relational Store into a DataSource.
@@ -79,81 +163,57 @@ func (a *RelationalAdapter) listCatalogItems(ctx context.Context) ([]CatalogItem
 }
 
 func (a *RelationalAdapter) Browse(ctx context.Context, req BrowseRequest) (BrowseResponse, error) {
-	cols, err := a.store.Columns(req.ObjectName)
+	if err := req.Validate(); err != nil {
+		return BrowseResponse{}, err
+	}
+	columns, err := a.store.Columns(req.ObjectName)
 	if err != nil {
 		return BrowseResponse{}, err
 	}
-
-	pkCol, _ := singlePK(cols)
-	total, err := a.store.CountTableContext(ctx, req.ObjectName)
-	if err != nil {
-		total = -1
+	if err := req.Options.ValidateColumns(columns); err != nil {
+		return BrowseResponse{}, err
 	}
-
-	if pkCol != "" {
-		// Keyset pagination: request PageSize + 1 rows to determine HasNext
-		res, err := a.store.SelectTableKeysetPageContext(ctx, req.ObjectName, pkCol, req.PageSize+1, req.Cursor)
-		if err != nil {
-			return BrowseResponse{}, err
-		}
-		hasNext := len(res.Rows) > req.PageSize
-		rows := res.Rows
-		var nulls [][]bool
-		if res.Nulls != nil {
-			nulls = res.Nulls
-		}
-		if len(rows) > req.PageSize {
-			rows = rows[:req.PageSize]
-			if nulls != nil && len(nulls) > req.PageSize {
-				nulls = nulls[:req.PageSize]
-			}
-		}
-		nextCursor := ""
-		if len(rows) > 0 {
-			pkResIdx := -1
-			for i, c := range res.Columns {
-				if c == pkCol {
-					pkResIdx = i
+	browseStore, ok := a.store.(projectedBrowsePageStore)
+	if !ok {
+		return BrowseResponse{}, fmt.Errorf("safe projected browsing is not supported by this SQL source")
+	}
+	orderBy := a.stableBrowseOrder(req.ObjectName, columns)
+	identity := append([]string(nil), orderBy...)
+	keysetColumn, _ := singlePK(columns)
+	res, err := browseStore.SelectTableBrowsePageContext(ctx, req, columns, orderBy, identity, keysetColumn)
+	if err != nil {
+		return BrowseResponse{}, err
+	}
+	rows, nulls, hasNext := trimBrowseLookahead(res, req.PageSize)
+	nextCursor := ""
+	if keysetColumn != "" && len(res.RowRefs) > 0 {
+		rowRef := res.RowRefs[len(rows)-1]
+		if rowRef != nil {
+			for _, part := range rowRef.KeyParts() {
+				if part.Column == keysetColumn {
+					nextCursor = browseCursorString(part.Value.Value)
 					break
 				}
 			}
-			if pkResIdx >= 0 && pkResIdx < len(rows[len(rows)-1]) {
-				nextCursor = rows[len(rows)-1][pkResIdx]
-			}
 		}
-		return BrowseResponse{
-			Data: &TabularData{
-				Columns:   res.Columns,
-				Rows:      rows,
-				Nulls:     nulls,
-				Affected:  -1,
-				Truncated: res.Truncated,
-				TotalRows: int64(total),
-			},
-			HasNext:    hasNext,
-			NextCursor: nextCursor,
-			TotalCount: int64(total),
-		}, nil
 	}
-
-	// Fallback to offset pagination
-	res, err := a.store.SelectTablePageContext(ctx, req.ObjectName, req.PageSize, req.Page*req.PageSize)
-	if err != nil {
-		return BrowseResponse{}, err
-	}
-	hasNext := (req.Page+1)*req.PageSize < total
 	return BrowseResponse{
 		Data: &TabularData{
-			Columns:   res.Columns,
-			Rows:      res.Rows,
-			Nulls:     res.Nulls,
-			Affected:  -1,
-			Truncated: res.Truncated,
-			TotalRows: int64(total),
+			Columns: res.Columns, Rows: rows, Nulls: nulls, Incomplete: res.Incomplete,
+			RowRefs: res.RowRefs, Affected: -1, Truncated: res.Truncated, TotalRows: -1,
 		},
-		HasNext:    hasNext,
-		TotalCount: int64(total),
+		HasNext: hasNext, NextCursor: nextCursor, TotalCount: -1,
 	}, nil
+}
+func browseCursorString(value any) string {
+	switch value := value.(type) {
+	case []byte:
+		return "0x" + hex.EncodeToString(value)
+	case time.Time:
+		return "time:" + value.Format(time.RFC3339Nano)
+	default:
+		return Stringify(value)
+	}
 }
 
 func (a *RelationalAdapter) Inspect(ctx context.Context, objectName string) (InspectionView, error) {
@@ -279,7 +339,10 @@ func (e *RelationalQueryExecutor) IsMutation(statement string) bool {
 	return IsSQLWrite(statement)
 }
 
-func (e *RelationalQueryExecutor) Execute(ctx context.Context, buffer string, line int, maxRows int) (DataView, error) {
+func (e *RelationalQueryExecutor) Execute(ctx context.Context, buffer string, line int, limits QueryLimits) (DataView, error) {
+	if err := limits.Validate(); err != nil {
+		return nil, err
+	}
 	stmts := SplitStatements(buffer)
 	if len(stmts) == 0 {
 		return nil, nil
@@ -290,7 +353,7 @@ func (e *RelationalQueryExecutor) Execute(ctx context.Context, buffer string, li
 	}
 
 	if ReturnsSQLRows(q) {
-		res, err := e.store.QueryContextMax(ctx, q, maxRows)
+		res, err := e.store.QueryContextMax(ctx, q, limits.MaxRows)
 		if err != nil {
 			return nil, err
 		}

@@ -14,6 +14,9 @@ func formatDataView(dv store.DataView, hasNext bool, totalCount int64, page int)
 	}
 
 	var b strings.Builder
+	if summary := store.IncompletenessSummary(dv); summary != "" {
+		fmt.Fprintf(&b, "INCOMPLETE: %s. Copy/export of the complete result is unavailable.\n", summary)
+	}
 
 	switch v := dv.(type) {
 	case *store.TabularData:
@@ -28,7 +31,7 @@ func formatDataView(dv store.DataView, hasNext bool, totalCount int64, page int)
 		if v.Title != "" {
 			fmt.Fprintf(&b, "# %s\n", v.Title)
 		}
-		b.WriteString(v.Text)
+		formatValue(&b, v.Text, v.Incomplete)
 	default:
 		fmt.Fprintf(&b, "%s", dv.Summary())
 	}
@@ -77,6 +80,8 @@ func formatTabular(b *strings.Builder, t *store.TabularData) {
 			}
 			if t.Nulls != nil && ri < len(t.Nulls) && ci < len(t.Nulls[ri]) && t.Nulls[ri][ci] {
 				b.WriteString("NULL")
+			} else if cellInfo, ok := t.CellIncomplete(ri, ci); ok {
+				formatValue(b, cell, &cellInfo)
 			} else {
 				b.WriteString(cell)
 			}
@@ -84,9 +89,6 @@ func formatTabular(b *strings.Builder, t *store.TabularData) {
 		b.WriteByte('\n')
 	}
 
-	if t.Truncated {
-		b.WriteString("... (truncated)\n")
-	}
 }
 
 func formatDocuments(b *strings.Builder, d *store.DocumentData) {
@@ -99,7 +101,7 @@ func formatDocuments(b *strings.Builder, d *store.DocumentData) {
 			b.WriteByte('\n')
 		}
 		fmt.Fprintf(b, "--- %s ---\n", doc.ID)
-		b.WriteString(doc.RawJSON)
+		formatValue(b, doc.RawJSON, doc.Incomplete)
 		b.WriteByte('\n')
 	}
 }
@@ -107,12 +109,13 @@ func formatDocuments(b *strings.Builder, d *store.DocumentData) {
 func formatKeyValue(b *strings.Builder, k *store.KeyValueData) {
 	fmt.Fprintf(b, "Key: %s  Type: %s  TTL: %s\n", k.Key, k.Type, k.TTL)
 	if k.Type == "string" && len(k.Entries) > 0 {
-		b.WriteString(k.Entries[0].Value)
+		formatValue(b, k.Entries[0].Value, k.Entries[0].Incomplete)
 		b.WriteByte('\n')
 		return
 	}
 	for _, e := range k.Entries {
-		fmt.Fprintf(b, "  %s: %s", e.Index, e.Value)
+		fmt.Fprintf(b, "  %s: ", e.Index)
+		formatValue(b, e.Value, e.Incomplete)
 		if e.Extra != "" {
 			fmt.Fprintf(b, " (%s)", e.Extra)
 		}
@@ -130,11 +133,38 @@ func formatGraph(b *strings.Builder, g *store.GraphData) {
 			b.WriteByte('\n')
 		}
 		fmt.Fprintf(b, "(%s) %s\n", n.ID, strings.Join(n.Labels, ":"))
-		for k, v := range n.Properties {
-			fmt.Fprintf(b, "  %s: %s\n", k, v)
-		}
+		formatProperties(b, n.Properties, n.Incomplete)
 		for _, e := range n.Incident {
 			fmt.Fprintf(b, "  %s[%s]%s %s\n", e.Direction, e.Type, e.Direction, e.TargetSummary)
+		}
+	}
+}
+
+func formatValue(b *strings.Builder, value string, incomplete *store.IncompleteCell) {
+	if incomplete == nil {
+		b.WriteString(value)
+		return
+	}
+	b.WriteString(incomplete.Label())
+	if incomplete.State != store.CellDeferred {
+		b.WriteByte(' ')
+		b.WriteString(value)
+	}
+}
+
+func formatProperties(b *strings.Builder, properties map[string]string, incomplete map[string]store.IncompleteCell) {
+	for key, value := range properties {
+		fmt.Fprintf(b, "  %s: ", key)
+		if cell, ok := incomplete[key]; ok {
+			formatValue(b, value, &cell)
+		} else {
+			b.WriteString(value)
+		}
+		b.WriteByte('\n')
+	}
+	for key, cell := range incomplete {
+		if _, ok := properties[key]; !ok {
+			fmt.Fprintf(b, "  %s: %s\n", key, cell.Label())
 		}
 	}
 }

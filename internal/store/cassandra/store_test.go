@@ -8,6 +8,12 @@ import (
 	"github.com/agmonetti/picklock/internal/store"
 )
 
+func queryLimitsForRows(maxRows int) store.QueryLimits {
+	limits := store.DefaultQueryLimits()
+	limits.MaxRows = maxRows
+	return limits
+}
+
 func TestCassandra_Registered(t *testing.T) {
 	cfg := conn.New(conn.DriverCassandra)
 	cfg.Host = "127.0.0.1"
@@ -45,7 +51,7 @@ func TestCassandra_ExecutorIsMutationAndReadOnly(t *testing.T) {
 		t.Error("SELECT must not be detected as mutation")
 	}
 
-	_, err := exec.Execute(context.Background(), "INSERT INTO users (id) VALUES (1)", 0, 10)
+	_, err := exec.Execute(context.Background(), "INSERT INTO users (id) VALUES (1)", 0, queryLimitsForRows(10))
 	if err == nil {
 		t.Fatal("expected mutation to be blocked in read-only mode")
 	}

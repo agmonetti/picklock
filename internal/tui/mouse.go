@@ -421,6 +421,14 @@ func (m *Model) handleDetailMouse(msg tea.MouseMsg) tea.Cmd {
 			m.dragEndLine = wy + m.detailScroll
 			m.dragEndCol = wx
 			if m.dragStartLine != m.dragEndLine || m.dragStartCol != m.dragEndCol {
+				if m.detailIncompleteReason != "" {
+					return m.incompleteDetailCopyError()
+				}
+				for _, isNull := range m.detailNulls {
+					if isNull {
+						return m.setError("cannot copy visual NULL markers; use field copy to preserve NULL")
+					}
+				}
 				text := m.detailPlainText(innerW)
 				if text != "" {
 					selected := screens.ExtractTextRange(text,

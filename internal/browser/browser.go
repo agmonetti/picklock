@@ -4,6 +4,7 @@ package browser
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/agmonetti/picklock/internal/store"
 )
@@ -34,7 +35,8 @@ type Browser struct {
 	Page      int
 	PageSize  int
 	TotalRows int
-	Cursor    int // Row/Item cursor within visible page
+	Options   store.BrowseOptions // active selection; never persisted
+	Cursor    int                 // Row/Item cursor within visible page
 
 	// Cursor stack for backward pagination across keyset/cursor engines.
 	// cur[p] is the cursor used to REQUEST page p (cur[0] = ""); next[p] is the
@@ -45,7 +47,7 @@ type Browser struct {
 	hasNext bool
 }
 
-// New loads the catalog of the data source and selects the first item.
+// New loads only the catalog. Preparation and first-page loading are explicit.
 func New(ctx context.Context, ds store.DataSource) (*Browser, error) {
 	b := &Browser{
 		PageSize: PageSizeDefault,
@@ -54,11 +56,6 @@ func New(ctx context.Context, ds store.DataSource) (*Browser, error) {
 	}
 	if err := b.Load(ctx, ds); err != nil {
 		return nil, err
-	}
-	if len(b.Items) > 0 {
-		if err := b.SelectItem(ctx, b.Items[0].Name, ds); err != nil {
-			return nil, err
-		}
 	}
 	return b, nil
 }
@@ -82,34 +79,85 @@ func (b *Browser) Load(ctx context.Context, ds store.DataSource) error {
 	return nil
 }
 
-// SelectTable switches the active item (alias for SelectItem).
-func (b *Browser) SelectTable(ctx context.Context, name string, ds store.DataSource) error {
-	return b.SelectItem(ctx, name, ds)
+// PreparedItem holds successful inspection without fetching any row payload.
+type PreparedItem struct {
+	Name      string
+	Structure store.InspectionView
 }
 
-// SelectItem switches the active item, resets pagination and loads its data.
-func (b *Browser) SelectItem(ctx context.Context, name string, ds store.DataSource) error {
-	b.ActiveTable = name
-	b.Page = 0
-	b.Cursor = 0
-	b.cur = []string{""}
-	b.next = []string{""}
-	b.hasNext = false
-
-	// Inspect structure
+// PrepareItem leaves the active table/data untouched, including on failure.
+func (b *Browser) PrepareItem(ctx context.Context, name string, ds store.DataSource) (*PreparedItem, error) {
 	insp, err := ds.Inspect(ctx, name)
-	if err == nil {
-		b.Structure = insp
-		if rel, ok := insp.(*store.RelationalStructure); ok {
-			b.Columns = rel.Columns
-			b.Indexes = rel.Indexes
-		} else {
-			b.Columns = nil
-			b.Indexes = nil
+	if err != nil {
+		return nil, err
+	}
+	return &PreparedItem{Name: name, Structure: insp}, nil
+}
+
+func (b *Browser) resetPage() {
+	b.Page, b.Cursor = 0, 0
+	b.cur, b.next = []string{""}, []string{""}
+	b.hasNext = false
+}
+
+// OpenPrepared loads the first page with explicit options, committing only on
+// success. No default fetch precedes the supplied selection.
+func (b *Browser) OpenPrepared(ctx context.Context, item *PreparedItem, options store.BrowseOptions, pageSize int, ds store.DataSource) error {
+	if item == nil || item.Structure == nil {
+		return fmt.Errorf("table has not been prepared")
+	}
+	if err := (store.BrowseRequest{ObjectName: item.Name, Options: options, PageSize: pageSize}).Validate(); err != nil {
+		return err
+	}
+	c := b.Clone()
+	c.ActiveTable, c.Structure = item.Name, item.Structure
+	c.Columns, c.Indexes = nil, nil
+	if rel, ok := item.Structure.(*store.RelationalStructure); ok {
+		c.Columns, c.Indexes = rel.Columns, rel.Indexes
+	}
+	c.Options, c.PageSize = cloneOptions(options), pageSize
+	c.resetPage()
+	if err := c.fetchPage(ctx, ds); err != nil {
+		return err
+	}
+	*b = *c
+	return nil
+}
+
+// SelectItem composes preparation and loading for callers without an
+// intermediate UI. Metadata failure never falls through to a content fetch.
+func (b *Browser) SelectItem(ctx context.Context, name string, ds store.DataSource) error {
+	item, err := b.PrepareItem(ctx, name, ds)
+	if err != nil {
+		return err
+	}
+	options := b.Options
+	if name != b.ActiveTable {
+		options = store.BrowseOptions{}
+	}
+	return b.OpenPrepared(ctx, item, options, b.PageSize, ds)
+}
+
+// SetOptions replaces the active selection atomically and clears every old
+// cursor. Unsupported driver options fail rather than returning stale rows.
+func (b *Browser) SetOptions(ctx context.Context, options store.BrowseOptions, pageSize int, ds store.DataSource) error {
+	name := b.ActiveTable
+	if name == "" {
+		name = "unselected"
+	}
+	if err := (store.BrowseRequest{ObjectName: name, PageSize: pageSize, Options: options}).Validate(); err != nil {
+		return err
+	}
+	c := b.Clone()
+	c.Options, c.PageSize = cloneOptions(options), pageSize
+	c.resetPage()
+	if c.ActiveTable != "" {
+		if err := c.fetchPage(ctx, ds); err != nil {
+			return err
 		}
 	}
-
-	return b.fetchPage(ctx, ds)
+	*b = *c
+	return nil
 }
 
 // Refresh reloads the current page of the active item without re-listing the catalog.
@@ -131,6 +179,7 @@ func (b *Browser) fetchPage(ctx context.Context, ds store.DataSource) error {
 		PageSize:   b.PageSize,
 		Page:       b.Page,
 		Cursor:     cursor,
+		Options:    b.Options,
 	})
 	if err != nil {
 		return err
@@ -183,6 +232,7 @@ func (b *Browser) Reload(ctx context.Context, ds store.DataSource) error {
 		b.Indexes = nil
 		b.Rows = nil
 		b.Nulls = nil
+		b.Options = store.BrowseOptions{}
 		b.Data = nil
 		b.Structure = nil
 		b.TotalRows = 0
@@ -194,24 +244,7 @@ func (b *Browser) Reload(ctx context.Context, ds store.DataSource) error {
 		return nil
 	}
 
-	// Re-inspect structure
-	insp, err := ds.Inspect(ctx, b.ActiveTable)
-	if err == nil {
-		b.Structure = insp
-		if rel, ok := insp.(*store.RelationalStructure); ok {
-			b.Columns = rel.Columns
-			b.Indexes = rel.Indexes
-		}
-	}
-	// Reset pagination to avoid landing on an empty page after a mutation
-	// (e.g. DELETE reduced total rows). Keep stack consistent for cursor
-	// engines by clearing cur/next.
-	b.Page = 0
-	b.Cursor = 0
-	b.cur = []string{""}
-	b.next = []string{""}
-	b.hasNext = false
-	return b.fetchPage(ctx, ds)
+	return b.SelectItem(ctx, b.ActiveTable, ds)
 }
 
 func hasString(list []string, want string) bool {
@@ -304,22 +337,23 @@ func (b *Browser) clampCursor() {
 	}
 }
 
-// Clone returns a deep copy of the browser.
+// Clone copies mutable navigation state. Published page payloads/metadata are
+// immutable and shared until replaced, not duplicated for each background op.
 func (b *Browser) Clone() *Browser {
 	c := *b
-	c.Items = append([]store.CatalogItem(nil), b.Items...)
-	c.Tables = append([]string(nil), b.Tables...)
-	c.Columns = append([]store.Column(nil), b.Columns...)
-	c.Indexes = append([]store.Index(nil), b.Indexes...)
-	c.Rows = make([][]string, len(b.Rows))
-	for i, r := range b.Rows {
-		c.Rows[i] = append([]string(nil), r...)
-	}
-	c.Nulls = make([][]bool, len(b.Nulls))
-	for i, r := range b.Nulls {
-		c.Nulls[i] = append([]bool(nil), r...)
-	}
+	c.Options = cloneOptions(b.Options)
 	c.cur = append([]string(nil), b.cur...)
 	c.next = append([]string(nil), b.next...)
 	return &c
+}
+
+func cloneOptions(o store.BrowseOptions) store.BrowseOptions {
+	o.Columns = append([]string(nil), o.Columns...)
+	o.Filters = append([]store.BrowseFilter(nil), o.Filters...)
+	for i := range o.Filters {
+		if value, ok := o.Filters[i].Value.Value.([]byte); ok {
+			o.Filters[i].Value.Value = append([]byte(nil), value...)
+		}
+	}
+	return o
 }

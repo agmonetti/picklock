@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/agmonetti/picklock/internal/conn"
+	"github.com/agmonetti/picklock/internal/store"
 )
 
 // envCfg builds the config from env vars, or skips if not set.
@@ -50,10 +51,10 @@ func TestIntegration(t *testing.T) {
 	if _, err := s.Exec("CREATE TABLE picklock_child (parent_id INTEGER NOT NULL REFERENCES picklock_parent(id), value TEXT)"); err != nil {
 		t.Fatalf("create child: %v", err)
 	}
-	if _, err := s.Exec("CREATE TABLE picklock_test (id SERIAL PRIMARY KEY, name TEXT NOT NULL, email TEXT)"); err != nil {
+	if _, err := s.Exec("CREATE TABLE picklock_test (id SERIAL PRIMARY KEY, name TEXT NOT NULL, email TEXT, payload TEXT, document JSONB, binary_payload BYTEA)"); err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	if _, err := s.Exec("INSERT INTO picklock_test (name, email) VALUES ('Alice','a@t.com'), ('Bob','b@t.com')"); err != nil {
+	if _, err := s.Exec("INSERT INTO picklock_test (name, email, payload, document, binary_payload) VALUES ('Alice','a@t.com','界' || repeat('x',1048576),('{\"v\":\"'||repeat('x',1048576)||'\"}')::jsonb,decode(repeat('ff',1048576),'hex')), ('Bob','b@t.com','界' || repeat('x',1048576),('{\"v\":\"'||repeat('x',1048576)||'\"}')::jsonb,decode(repeat('ff',1048576),'hex'))"); err != nil {
 		t.Fatalf("insert: %v", err)
 	}
 	t.Cleanup(func() {
@@ -74,8 +75,8 @@ func TestIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Columns: %v", err)
 	}
-	if len(cols) != 3 {
-		t.Fatalf("len(Columns) = %d, want 3", len(cols))
+	if len(cols) != 6 {
+		t.Fatalf("len(Columns) = %d, want 6", len(cols))
 	}
 	if !cols[0].PK || !cols[1].NotNull {
 		t.Errorf("constraints: %+v", cols)
@@ -95,6 +96,55 @@ func TestIntegration(t *testing.T) {
 	}
 	if len(page.Rows) != 2 || page.Rows[0][1] != "Alice" {
 		t.Errorf("page.Rows = %v", page.Rows)
+	}
+
+	browse := store.NewRelationalAdapter(s, cfg)
+	response, err := browse.Browse(context.Background(), store.BrowseRequest{
+		ObjectName: "picklock_test",
+		PageSize:   10,
+		Options: store.BrowseOptions{
+			Columns: []string{"name"},
+			Filters: []store.BrowseFilter{{Column: "id", Operator: store.FilterGreater, Value: store.TypedValue{Value: int64(1)}}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Browse projection/filter: %v", err)
+	}
+	data, ok := response.Data.(*store.TabularData)
+	if !ok || len(data.Columns) != 1 || data.Columns[0] != "name" || len(data.Rows) != 1 ||
+		data.Rows[0][0] != "Bob" || response.HasNext || response.TotalCount != -1 ||
+		data.RowRef(0) == nil || data.RowRef(0).KeyParts()[0].Column != "id" ||
+		data.RowRef(0).KeyParts()[0].Value.Value != int64(2) {
+		t.Fatalf("Browse projection/filter = %+v hasNext=%v total=%d, want Bob only, hidden id=2, unknown total", response.Data, response.HasNext, response.TotalCount)
+	}
+	retainedBytes := 0
+	for _, row := range data.Rows {
+		for _, value := range row {
+			retainedBytes += len(value)
+		}
+	}
+	if retainedBytes != len("Bob") {
+		t.Fatalf("projected result retained %d bytes, want 3", retainedBytes)
+	}
+	t.Logf("projection returned %d selected bytes; omitted text/JSON/blob columns from both rows", retainedBytes)
+	defaultPage, err := browse.Browse(context.Background(), store.BrowseRequest{
+		ObjectName: "picklock_test",
+		PageSize:   10,
+		Options:    store.BrowseOptions{PreviewBytes: 8},
+	})
+	if err != nil {
+		t.Fatalf("Browse default projection: %v", err)
+	}
+	defaultData, ok := defaultPage.Data.(*store.TabularData)
+	payloadPosition := store.CellPosition{Row: 0, Column: 3}
+	documentPosition := store.CellPosition{Row: 0, Column: 4}
+	binaryPosition := store.CellPosition{Row: 0, Column: 5}
+	if !ok || len(defaultData.Columns) != 6 || len(defaultData.Rows) != 2 || defaultPage.HasNext ||
+		defaultData.Rows[0][3] != "界xxxxx" || defaultData.Incomplete[payloadPosition].State != store.CellPreview ||
+		len(defaultData.Rows[0][4]) != 8 || defaultData.Incomplete[documentPosition].State != store.CellPreview ||
+		len(defaultData.Rows[0][5]) != 18 || defaultData.Incomplete[binaryPosition].State != store.CellPreview ||
+		defaultData.RowRef(0) == nil || defaultData.RowRef(0).KeyParts()[0].Value.Value != int64(1) {
+		t.Fatalf("default Browse projection = %+v hasNext=%v, want bounded text/JSON/blob previews and hidden identity", defaultPage.Data, defaultPage.HasNext)
 	}
 
 	// keyset pagination over the primary key

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/clipperhouse/uax29/v2/graphemes"
 	"github.com/mattn/go-runewidth"
 
 	"github.com/agmonetti/picklock/internal/browser"
@@ -209,7 +210,7 @@ const colSepW = 3
 
 // RenderMainBrowser renders data from any DataView.
 // colScroll is the index of the first visible column for tabular data.
-func RenderMainBrowser(b *browser.Browser, colScroll, width, height int) string {
+func RenderMainBrowser(b *browser.Browser, colScroll, width, height int) (out string) {
 	if b == nil {
 		return styles.StyleHeaderDim.Render("no connection")
 	}
@@ -233,6 +234,10 @@ func RenderMainBrowser(b *browser.Browser, colScroll, width, height int) string 
 		}
 		return styles.StyleHeaderDim.Render("select an item")
 	}
+	if summary := store.IncompletenessSummary(b.Data); summary != "" {
+		height--
+		defer func() { out += "\n" + styles.StyleHeaderDim.Render(truncate("INCOMPLETE: "+summary, width)) }()
+	}
 
 	switch v := b.Data.(type) {
 	case *store.TabularData:
@@ -246,7 +251,7 @@ func RenderMainBrowser(b *browser.Browser, colScroll, width, height int) string 
 		if len(v.Rows) == 0 {
 			return renderEmptyTable(cols, b.Cursor, colScroll, width)
 		}
-		return RenderDataTableWithNulls(cols, v.Rows, v.Nulls, b.Cursor, colScroll, width, height)
+		return renderDataTable(cols, v.Rows, v.Nulls, v.Incomplete, 0, b.Cursor, colScroll, width, height)
 
 	case *store.DocumentData:
 		return RenderDocumentList(v, b.Cursor, width, height)
@@ -305,7 +310,10 @@ func RenderDocumentList(docs *store.DocumentData, cursor, width, height int) str
 		if summary == "" {
 			summary = d.RawJSON
 		}
-		line := fmt.Sprintf("[%s] %s", d.ID, summary)
+		if d.Incomplete != nil {
+			summary = presentIncomplete(summary, *d.Incomplete, width)
+		}
+		line := fmt.Sprintf("[%s] %s", truncate(d.ID, width), truncate(summary, width))
 		line = truncate(line, width-4)
 		if idx == cursor {
 			sb.WriteString(styles.StyleCursor.Render("> "+line) + "\n")
@@ -321,11 +329,11 @@ func RenderKeyValue(kv *store.KeyValueData, cursor, width, height int) string {
 	if kv.Type == "string" {
 		var sb strings.Builder
 		sb.WriteString(styles.StyleHeaderDim.Render(fmt.Sprintf("Key: %s · Type: string · TTL: %s", kv.Key, kv.TTL)) + "\n\n")
-		val := ""
+		raw := &store.RawTextData{}
 		if len(kv.Entries) > 0 {
-			val = kv.Entries[0].Value
+			raw.Text, raw.Incomplete = kv.Entries[0].Value, kv.Entries[0].Incomplete
 		}
-		sb.WriteString(styles.StyleSidebarItem.Render(val) + "\n")
+		sb.WriteString(RenderRawText(raw, width, height-2) + "\n")
 		return sb.String()
 	}
 
@@ -342,15 +350,22 @@ func RenderKeyValue(kv *store.KeyValueData, cursor, width, height int) string {
 	}
 
 	rows := make([][]string, len(kv.Entries))
+	var incomplete map[store.CellPosition]store.IncompleteCell
 	for i, e := range kv.Entries {
 		if hasExtra {
 			rows[i] = []string{e.Index, e.Value, e.Extra}
 		} else {
 			rows[i] = []string{e.Index, e.Value}
 		}
+		if e.Incomplete != nil {
+			if incomplete == nil {
+				incomplete = make(map[store.CellPosition]store.IncompleteCell)
+			}
+			incomplete[store.CellPosition{Row: i, Column: 1}] = *e.Incomplete
+		}
 	}
 	header := styles.StyleHeaderDim.Render(fmt.Sprintf("Key: %s · Type: %s · TTL: %s", kv.Key, kv.Type, kv.TTL))
-	table := RenderDataTable(cols, rows, cursor, 0, width, height-2)
+	table := renderDataTable(cols, rows, nil, incomplete, 0, cursor, 0, width, height-2)
 	return header + "\n" + table
 }
 
@@ -361,19 +376,12 @@ func RenderGraph(g *store.GraphData, cursor, width, height int) string {
 	}
 	start, visible := ListWindow(len(g.Nodes), cursor, height)
 	var sb strings.Builder
-	for i := 0; i < visible; i++ {
+	for i := range visible {
 		idx := start + i
-		if idx >= len(g.Nodes) {
-			break
-		}
-		n := g.Nodes[idx]
+		n := &g.Nodes[idx]
 		labels := ":" + strings.Join(n.Labels, ":")
-		props := ""
-		for k, v := range n.Properties {
-			props += fmt.Sprintf("%s: %q ", k, v)
-		}
-		edges := fmt.Sprintf("[%d edges]", len(n.Incident))
-		line := fmt.Sprintf("(%s %s) %s %s", n.ID, labels, props, edges)
+		props := graphPropertiesSummary(n.Properties, n.Incomplete, width)
+		line := fmt.Sprintf("(%s %s) %s [%d edges]", truncate(n.ID, width), truncate(labels, width), props, len(n.Incident))
 		line = truncate(line, width-4)
 		if idx == cursor {
 			sb.WriteString(styles.StyleCursor.Render("> "+line) + "\n")
@@ -384,16 +392,46 @@ func RenderGraph(g *store.GraphData, cursor, width, height int) string {
 	return sb.String()
 }
 
+func graphPropertiesSummary(properties map[string]string, incomplete map[string]store.IncompleteCell, width int) string {
+	var props strings.Builder
+	for key, value := range properties {
+		if cell, ok := incomplete[key]; ok {
+			value = presentIncomplete(value, cell, width)
+		}
+		fmt.Fprintf(&props, "%s: %q ", truncate(key, width), truncate(value, width))
+		if cappedCellWidth(props.String(), width) == width {
+			return truncate(props.String(), width)
+		}
+	}
+	for key, cell := range incomplete {
+		if _, ok := properties[key]; !ok {
+			fmt.Fprintf(&props, "%s: %s ", truncate(key, width), truncate(cell.Label(), width))
+			if cappedCellWidth(props.String(), width) == width {
+				break
+			}
+		}
+	}
+	return truncate(props.String(), width)
+}
+
 // RenderRawText renders plain diagnostic text.
 func RenderRawText(raw *store.RawTextData, width, height int) string {
-	lines := strings.Split(raw.Text, "\n")
-	if len(lines) > height {
-		lines = lines[:height]
+	// Do not split or copy the hidden suffix just to draw the visible lines.
+	text := raw.Text
+	if raw.Incomplete != nil {
+		text = presentIncomplete(text, *raw.Incomplete, width-2)
 	}
-	for i, l := range lines {
-		lines[i] = truncate(l, width-2)
+	var sb strings.Builder
+	for i := range height {
+		line, rest, found := strings.Cut(text, "\n")
+		sb.WriteString(truncate(line, width-2))
+		if !found || i+1 == height {
+			break
+		}
+		sb.WriteByte('\n')
+		text = rest
 	}
-	return strings.Join(lines, "\n")
+	return sb.String()
 }
 
 // RenderDataTable renders columns + rows with cursor row highlighted.
@@ -404,11 +442,41 @@ func RenderDataTable(cols []string, rows [][]string, cursor, colScroll, width, h
 
 // RenderDataTableWithNulls renders columns + rows with null indicators from the nulls mask.
 func RenderDataTableWithNulls(cols []string, rows [][]string, nulls [][]bool, cursor, colScroll, width, height int) string {
+	return renderDataTable(cols, rows, nulls, nil, 0, cursor, colScroll, width, height)
+}
+
+// RenderTabularData preserves absolute metadata positions while the editor scrolls.
+func RenderTabularData(data *store.TabularData, rowOffset, cursor, colScroll, width, height int) string {
+	rowOffset = min(max(rowOffset, 0), len(data.Rows))
+	var nulls [][]bool
+	if rowOffset < len(data.Nulls) {
+		nulls = data.Nulls[rowOffset:]
+	}
+	return renderDataTable(data.Columns, data.Rows[rowOffset:], nulls, data.Incomplete, rowOffset, cursor, colScroll, width, height)
+}
+
+func renderDataTable(cols []string, rows [][]string, nulls [][]bool, incomplete map[store.CellPosition]store.IncompleteCell, rowOffset, cursor, colScroll, width, height int) string {
 	if len(cols) == 0 {
 		return ""
 	}
 
 	naturalW := colNaturalWidths(cols, rows)
+	for pos, cell := range incomplete {
+		row := pos.Row - rowOffset
+		if row < 0 || row >= len(rows) || pos.Column < 0 || pos.Column >= len(cols) {
+			continue
+		}
+		if row < len(nulls) && pos.Column < len(nulls[row]) && nulls[row][pos.Column] {
+			continue
+		}
+		// Measure only enough prefix to fill the bounded presentation column.
+		markerWidth := cappedCellWidth(cell.Label(), colMaxW)
+		presentationWidth := markerWidth
+		if cell.State != store.CellDeferred && pos.Column < len(rows[row]) && markerWidth+1 < colMaxW {
+			presentationWidth += 1 + cappedCellWidth(rows[row][pos.Column], colMaxW-markerWidth-1)
+		}
+		naturalW[pos.Column] = max(naturalW[pos.Column], presentationWidth)
+	}
 	visStart, visWidths, hasLeft, hasRight := colScrollWindow(naturalW, colScroll, width)
 	visCols := cols[visStart : visStart+len(visWidths)]
 
@@ -432,9 +500,23 @@ func RenderDataTableWithNulls(cols []string, rows [][]string, nulls [][]bool, cu
 			}
 			visNulls = nulls[row][visStart:end]
 		}
-		sb.WriteString(renderRow(visRow, visNulls, visWidths, row == cursor, hasLeft) + "\n")
+		sb.WriteString(renderRowWithMetadata(visRow, visNulls, visWidths, row == cursor, hasLeft, incomplete, row+rowOffset, visStart) + "\n")
 	}
 	return sb.String()
+}
+
+// Prefix the marker before a bounded value prefix: cropping can never leave an
+// unlabelled preview, and presentation never stores another copy of the payload.
+func presentIncomplete(value string, cell store.IncompleteCell, width int) string {
+	label := truncate(cell.Label(), width)
+	if cell.State == store.CellDeferred {
+		return label
+	}
+	remaining := width - cappedCellWidth(label, width) - 1
+	if remaining <= 0 {
+		return label
+	}
+	return label + " " + truncate(value, remaining)
 }
 
 // colNaturalWidths computes the natural (uncompressed) width of each column,
@@ -443,7 +525,7 @@ func colNaturalWidths(cols []string, rows [][]string) []int {
 	n := len(cols)
 	widths := make([]int, n)
 	for i, c := range cols {
-		widths[i] = runewidth.StringWidth(c)
+		widths[i] = cappedCellWidth(c, colMaxW)
 	}
 	maxRows := len(rows)
 	if maxRows > 100 {
@@ -454,15 +536,15 @@ func colNaturalWidths(cols []string, rows [][]string) []int {
 			if i >= n {
 				break
 			}
-			if w := runewidth.StringWidth(cell); w > widths[i] {
+			if widths[i] == colMaxW {
+				continue
+			}
+			if w := cappedCellWidth(cell, colMaxW); w > widths[i] {
 				widths[i] = w
 			}
 		}
 	}
 	for i := range widths {
-		if widths[i] > colMaxW {
-			widths[i] = colMaxW
-		}
 		if widths[i] < colMinW {
 			widths[i] = colMinW
 		}
@@ -552,20 +634,6 @@ func renderHeaderScrolled(cells []string, widths []int, hasLeft, hasRight bool) 
 	return sb.String()
 }
 
-func renderHeader(cells []string, widths []int) string {
-	var sb strings.Builder
-	for i, c := range cells {
-		if i >= len(widths) {
-			break
-		}
-		sb.WriteString(styles.StyleColHeader.Render(pad(truncate(c, widths[i]), widths[i])))
-		if i < len(cells)-1 {
-			sb.WriteString(styles.StyleBorder.Render(colSep))
-		}
-	}
-	return sb.String()
-}
-
 func renderSep(cells []string, widths []int, hasLeft bool) string {
 	var sb strings.Builder
 	if hasLeft {
@@ -586,119 +654,7 @@ func renderSep(cells []string, widths []int, hasLeft bool) string {
 const colMaxW = 36
 const colMinW = 4
 
-func colWidths(cols []string, rows [][]string, width int) []int {
-	n := len(cols)
-	widths := make([]int, n)
-	for i, c := range cols {
-		widths[i] = runewidth.StringWidth(c)
-	}
-	maxRows := len(rows)
-	if maxRows > 100 {
-		maxRows = 100
-	}
-	for r := 0; r < maxRows; r++ {
-		for i, cell := range rows[r] {
-			if i >= n {
-				break
-			}
-			if w := runewidth.StringWidth(cell); w > widths[i] {
-				widths[i] = w
-			}
-		}
-	}
-	for i := range widths {
-		if widths[i] > colMaxW {
-			widths[i] = colMaxW
-		}
-	}
-
-	total := (n - 1) * colSepW
-	for _, w := range widths {
-		total += w
-	}
-	if total <= width {
-		return widths
-	}
-
-	over := total - width
-	giveable := 0
-	for _, w := range widths {
-		if g := w - colMinW; g > 0 {
-			giveable += g
-		}
-	}
-	if giveable > 0 {
-		remaining := over
-		for i := range widths {
-			if remaining <= 0 {
-				break
-			}
-			g := widths[i] - colMinW
-			if g <= 0 {
-				continue
-			}
-			share := g * over / giveable
-			if share > g {
-				share = g
-			}
-			if share > remaining {
-				share = remaining
-			}
-			if share < 0 {
-				share = 0
-			}
-			widths[i] -= share
-			remaining -= share
-		}
-		for remaining > 0 {
-			progress := false
-			for i := range widths {
-				if remaining <= 0 {
-					break
-				}
-				shrink := widths[i] - colMinW
-				if shrink > remaining {
-					shrink = remaining
-				}
-				if shrink < 0 {
-					shrink = 0
-				}
-				if shrink > 0 {
-					widths[i] -= shrink
-					remaining -= shrink
-					progress = true
-				}
-			}
-			if !progress {
-				break
-			}
-		}
-	}
-
-	total = (n - 1) * colSepW
-	for _, w := range widths {
-		total += w
-	}
-	if total > width {
-		remaining := total - width
-		for i := range widths {
-			if remaining <= 0 {
-				break
-			}
-			shrink := widths[i] - 1
-			if shrink > remaining {
-				shrink = remaining
-			}
-			if shrink > 0 {
-				widths[i] -= shrink
-				remaining -= shrink
-			}
-		}
-	}
-	return widths
-}
-
-func renderRow(cells []string, nulls []bool, widths []int, selected bool, hasLeft bool) string {
+func renderRowWithMetadata(cells []string, nulls []bool, widths []int, selected bool, hasLeft bool, incomplete map[store.CellPosition]store.IncompleteCell, row, colOffset int) string {
 	var sb strings.Builder
 	if hasLeft {
 		if selected {
@@ -711,7 +667,10 @@ func renderRow(cells []string, nulls []bool, widths []int, selected bool, hasLef
 		if i >= len(widths) {
 			break
 		}
-		isNull := isCellNull(nulls, i, cell)
+		isNull := i < len(nulls) && nulls[i]
+		if info, ok := incomplete[store.CellPosition{Row: row, Column: i + colOffset}]; ok && !isNull {
+			cell = presentIncomplete(cell, info, widths[i])
+		}
 		sb.WriteString(renderCellText(cell, isNull, widths[i], selected))
 		if i < len(cells)-1 {
 			if selected {
@@ -722,13 +681,6 @@ func renderRow(cells []string, nulls []bool, widths []int, selected bool, hasLef
 		}
 	}
 	return sb.String()
-}
-
-func isCellNull(nulls []bool, i int, cell string) bool {
-	if i < len(nulls) {
-		return nulls[i]
-	}
-	return cell == ""
 }
 
 func renderCellText(cell string, isNull bool, width int, selected bool) string {
@@ -757,26 +709,37 @@ func renderCellText(cell string, isNull bool, width int, selected bool) string {
 	return text
 }
 
+// truncate visits only the visible prefix plus one grapheme of lookahead.
+// Measure clusters with runewidth to keep the same terminal-width policy as pad.
+// Styling is applied by callers after cropping, so ANSI styles are not cut.
 func truncate(s string, max int) string {
 	if max <= 0 {
 		return ""
 	}
-	if runewidth.StringWidth(s) <= max {
-		return s
+	g := graphemes.FromString(s)
+	width, tailEnd := 0, 0
+	for g.Next() {
+		width += runewidth.StringWidth(g.Value())
+		if width > max {
+			return s[:tailEnd] + "…"
+		}
+		if width <= max-1 {
+			tailEnd = g.End()
+		}
 	}
-	trimmed := s
-	for runewidth.StringWidth(trimmed) > max-1 {
-		trimmed = trimLastRune(trimmed)
-	}
-	return trimmed + "…"
+	return s
 }
 
-func trimLastRune(s string) string {
-	if s == "" {
-		return ""
+func cappedCellWidth(s string, max int) int {
+	width := 0
+	g := graphemes.FromString(s)
+	for g.Next() {
+		width += runewidth.StringWidth(g.Value())
+		if width >= max {
+			return max
+		}
 	}
-	r := []rune(s)
-	return string(r[:len(r)-1])
+	return width
 }
 
 func pad(s string, w int) string {
@@ -814,8 +777,14 @@ func RenderEmptyTable(cols []string, width int) string {
 		styles.StyleHeaderDim.Render(center(caption))
 }
 
-// RenderRowDetail renders a single row with every column and full value, highlighting the cursor field.
+// RenderRowDetail wraps already-loaded values only as far as the viewport needs.
 func RenderRowDetail(title string, cols, vals []string, cursor, scroll, width, height int) string {
+	return RenderRowDetailWithMetadata(title, cols, vals, nil, nil, cursor, scroll, width, height)
+}
+
+// RenderRowDetailWithMetadata keeps NULL, empty, preview and deferred distinct.
+// The NULL mask is authoritative; an absent entry is not NULL.
+func RenderRowDetailWithMetadata(title string, cols, vals []string, nulls []bool, incomplete map[int]store.IncompleteCell, cursor, scroll, width, height int) string {
 	if width < 4 {
 		width = 40
 	}
@@ -831,6 +800,13 @@ func RenderRowDetail(title string, cols, vals []string, cursor, scroll, width, h
 		b.WriteString(styles.StyleHeaderDim.Render("  no columns"))
 		return b.String()
 	}
+	if scroll < 0 {
+		scroll = 0
+	}
+	if height <= 0 {
+		return ""
+	}
+	limit := scroll + height
 
 	var lines []string
 	lines = append(lines, "")
@@ -840,25 +816,33 @@ func RenderRowDetail(title string, cols, vals []string, cursor, scroll, width, h
 		if i < len(vals) {
 			val = vals[i]
 		}
+		isNull := i < len(nulls) && nulls[i]
+		if cell, ok := incomplete[i]; ok && !isNull {
+			val = presentIncomplete(val, cell, contentW-4)
+		}
 		if i == cursor {
 			lines = append(lines, styles.StyleSidebarActive.Render("> ")+styles.StyleColHeader.Render(name+":"))
 		} else {
 			lines = append(lines, "  "+styles.StyleColHeader.Render(name+":"))
 		}
-		if val == "" {
+		if len(lines) >= limit {
+			break
+		}
+		if isNull {
 			lines = append(lines, "    "+styles.NullCell())
 		} else {
-			wrapped := WrapCells(val, contentW-4)
+			wrapped := wrapCellLines(val, contentW-4, limit-len(lines))
 			for _, wl := range wrapped {
 				lines = append(lines, "    "+wl)
 			}
 		}
 		lines = append(lines, "")
+		if len(lines) >= limit {
+			break
+		}
 	}
 
-	if scroll < 0 {
-		scroll = 0
-	}
+	// Deep scrolling still walks the prefix, but never wraps the hidden suffix.
 	if scroll > len(lines) {
 		scroll = len(lines)
 	}
@@ -871,24 +855,34 @@ func RenderRowDetail(title string, cols, vals []string, cursor, scroll, width, h
 
 // WrapCells splits a string into lines that do not exceed max width.
 func WrapCells(s string, max int) []string {
+	return wrapCellLines(s, max, -1)
+}
+
+// A negative limit requests all lines (used for field navigation/hit testing).
+func wrapCellLines(s string, max, limit int) []string {
+	if limit == 0 {
+		return nil
+	}
 	if max <= 0 {
 		return []string{""}
 	}
 	var out []string
-	line := ""
-	lineW := 0
-	for _, r := range s {
-		w := runewidth.RuneWidth(r)
+	lineStart, lineW := 0, 0
+	g := graphemes.FromString(s)
+	for g.Next() {
+		w := runewidth.StringWidth(g.Value())
 		if lineW+w > max && lineW > 0 {
-			out = append(out, line)
-			line = ""
+			out = append(out, s[lineStart:g.Start()])
+			if limit > 0 && len(out) == limit {
+				return out
+			}
+			lineStart = g.Start()
 			lineW = 0
 		}
-		line += string(r)
 		lineW += w
 	}
-	if line != "" {
-		out = append(out, line)
+	if lineStart < len(s) {
+		out = append(out, s[lineStart:])
 	}
 	if len(out) == 0 {
 		out = []string{""}

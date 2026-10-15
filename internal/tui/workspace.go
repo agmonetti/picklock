@@ -257,7 +257,11 @@ func (m *Model) selectTable(idx int) tea.Cmd {
 	m.structureScroll = 0
 	m.colScroll = 0 // reset horizontal scroll when opening a new table
 	name := m.browser.Tables[idx]
+	pageSize := m.prefs.BrowsePageSize
 	return m.runBrowserOp(func(b *browser.Browser, st store.DataSource, ctx context.Context) error {
+		if name != b.ActiveTable {
+			b.PageSize = pageSize
+		}
 		return b.SelectItem(ctx, name, st)
 	})
 }

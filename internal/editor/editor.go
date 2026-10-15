@@ -19,9 +19,6 @@ const (
 	EditorModeExecuting
 )
 
-// MaxResultRows caps how many items an editor query loads into memory.
-const MaxResultRows = 10000
-
 // Editor keeps the state of the query/command editor.
 type Editor struct {
 	Buffer    string
@@ -41,11 +38,16 @@ func New() *Editor {
 
 // Execute runs the query against the data source.
 func (e *Editor) Execute(ds store.DataSource) error {
-	return e.ExecuteAt(context.Background(), ds, 0)
+	return e.ExecuteAt(context.Background(), ds, 0, store.DefaultQueryLimits())
 }
 
 // ExecuteAt runs the statement that contains line (0-based) against the data source.
-func (e *Editor) ExecuteAt(ctx context.Context, ds store.DataSource, line int) error {
+func (e *Editor) ExecuteAt(ctx context.Context, ds store.DataSource, line int, limits store.QueryLimits) error {
+	if err := limits.Validate(); err != nil {
+		e.Data = nil
+		e.Error = err.Error()
+		return err
+	}
 	buf := strings.TrimSpace(e.Buffer)
 	if buf == "" {
 		return nil
@@ -80,7 +82,7 @@ func (e *Editor) ExecuteAt(ctx context.Context, ds store.DataSource, line int) e
 	// Send the statement under the cursor, never the whole buffer: the
 	// non-relational engines (Cassandra, Neo4j, Redis, Mongo) treat the input
 	// as a single statement and would fail on a multi-statement buffer.
-	data, err := q.Execute(ctx, stmtText, line, MaxResultRows)
+	data, err := q.Execute(ctx, stmtText, line, limits)
 	if err != nil {
 		e.Data = nil
 		e.Error = err.Error()

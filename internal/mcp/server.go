@@ -299,7 +299,9 @@ func (s *Server) handleQuery(ctx context.Context, req mcp.CallToolRequest) (*mcp
 		return mcp.NewToolResultError("mutation blocked: connection is read-only"), nil
 	}
 
-	data, err := qe.Execute(ctx, stmt, 0, maxQueryRows)
+	limits := store.DefaultQueryLimits()
+	limits.MaxRows = maxQueryRows
+	data, err := qe.Execute(ctx, stmt, 0, limits)
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("query error: %v", err)), nil
 	}

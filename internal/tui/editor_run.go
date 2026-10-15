@@ -74,6 +74,7 @@ func (m *Model) executeEditor() tea.Cmd {
 	m.queryID++
 	token := m.queryID
 	timeout := time.Duration(m.prefs.QueryTimeout()) * time.Second
+	limits := m.prefs.QueryLimits()
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	m.cancelQuery()
 	m.cancel = cancel
@@ -83,7 +84,7 @@ func (m *Model) executeEditor() tea.Cmd {
 		func() tea.Msg {
 			ed := editor.New()
 			ed.Buffer = buf
-			err := ed.ExecuteAt(ctx, st, line)
+			err := ed.ExecuteAt(ctx, st, line, limits)
 			if err != nil {
 				ed.Error = friendlyErr(err).Error()
 			}

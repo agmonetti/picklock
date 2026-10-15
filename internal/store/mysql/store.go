@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 
 	mysqlDriver "github.com/go-sql-driver/mysql"
@@ -334,6 +335,118 @@ func (s *Store) SelectTablePageContext(ctx context.Context, table string, limit,
 	}
 	defer rows.Close()
 	return store.ScanResult(rows)
+}
+
+// SelectTableOrderedPageContext pages by a validated primary-key tuple.
+func (s *Store) SelectTableOrderedPageContext(ctx context.Context, table string, orderBy []string, limit, offset int) (*store.Result, error) {
+	keys := make([]string, len(orderBy))
+	for i, key := range orderBy {
+		keys[i] = QuoteIdent(key)
+	}
+	q := fmt.Sprintf("SELECT * FROM %s ORDER BY %s LIMIT %d OFFSET %d", QuoteIdent(table), strings.Join(keys, ", "), limit, offset)
+	rows, err := s.db.QueryContext(ctx, q)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return store.ScanResult(rows)
+}
+
+// SelectTableBrowsePageContext returns a bounded, projected browse page.
+func (s *Store) SelectTableBrowsePageContext(
+	ctx context.Context,
+	req store.BrowseRequest,
+	columns []store.Column,
+	orderBy, identityColumns []string,
+	keysetColumn string,
+) (*store.Result, error) {
+	previewBytes := req.Options.PreviewBytes
+	if previewBytes == 0 {
+		previewBytes = store.DefaultBrowsePreviewBytes
+	}
+
+	var cursorValue any
+	if keysetColumn != "" && req.Cursor != "" {
+		var keyColumn *store.Column
+		for i := range columns {
+			if columns[i].Name == keysetColumn {
+				keyColumn = &columns[i]
+				break
+			}
+		}
+		if keyColumn == nil {
+			return nil, fmt.Errorf("unknown keyset column %q", keysetColumn)
+		}
+		var err error
+		cursorValue, err = store.ParseBrowseCursor(*keyColumn, req.Cursor)
+		if err != nil {
+			return nil, fmt.Errorf("decode keyset cursor for %q: %w", keysetColumn, err)
+		}
+	}
+
+	query, args, layout, err := store.BuildRelationalBrowseProjectionQuery(
+		req, columns, orderBy, identityColumns, keysetColumn, cursorValue,
+		store.RelationalSQLDialect{
+			QuoteIdentifier: QuoteIdent,
+			BindVariable:    func(int) string { return "?" },
+			Pagination:      func(limit, offset int) string { return fmt.Sprintf("LIMIT %d OFFSET %d", limit, offset) },
+		},
+		previewBytes,
+		mysqlBrowseProjection,
+	)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return store.ScanBrowseProjection(rows, layout, req.ObjectName)
+}
+
+func mysqlBrowseProjection(column store.Column, previewBytes int) store.SQLBrowseProjection {
+	baseType := strings.ToLower(strings.TrimSpace(column.Type))
+	if i := strings.IndexByte(baseType, '('); i >= 0 {
+		baseType = baseType[:i]
+	}
+	baseType = strings.TrimSpace(strings.TrimSuffix(baseType, " unsigned"))
+	quoted := QuoteIdent(column.Name)
+	text := false
+	spatial := false
+	switch baseType {
+	case "char", "varchar", "tinytext", "text", "mediumtext", "longtext", "enum", "set", "json":
+		text = true
+	case "binary", "varbinary", "tinyblob", "blob", "mediumblob", "longblob":
+	case "geometry", "point", "linestring", "polygon", "multipoint", "multilinestring", "multipolygon", "geometrycollection":
+		spatial = true
+	default:
+		switch baseType {
+		case "tinyint", "smallint", "mediumint", "int", "integer", "bigint", "decimal", "numeric",
+			"float", "double", "real", "bit", "bool", "boolean", "date", "datetime", "timestamp", "time", "year":
+			return store.SQLBrowseProjection{Type: column.Type}
+		default:
+			return store.SQLBrowseProjection{Type: column.Type, Error: "metadata does not expose a supported base type"}
+		}
+	}
+
+	valueExpr := fmt.Sprintf("SUBSTRING(CAST(%s AS BINARY), 1, %d)", quoted, previewBytes)
+	lengthExpr := quoted
+	if text {
+		utf8Expr := fmt.Sprintf("CAST(%s AS CHAR CHARACTER SET utf8mb4)", quoted)
+		valueExpr = fmt.Sprintf("SUBSTRING(CAST(%s AS BINARY), 1, %d)", utf8Expr, previewBytes)
+		lengthExpr = utf8Expr
+	} else if spatial {
+		valueExpr = fmt.Sprintf("SUBSTRING(ST_AsWKB(%s), 1, %d)", quoted, previewBytes)
+		lengthExpr = fmt.Sprintf("ST_AsWKB(%s)", quoted)
+	}
+	return store.SQLBrowseProjection{
+		ValueExpr:   valueExpr,
+		NullExpr:    fmt.Sprintf("CASE WHEN %s IS NULL THEN 1 ELSE 0 END", quoted),
+		PreviewExpr: fmt.Sprintf("CASE WHEN OCTET_LENGTH(%s) > %d THEN 1 ELSE 0 END", lengthExpr, previewBytes),
+		Type:        column.Type,
+		Text:        text,
+	}
 }
 
 // SelectTableKeysetPage returns the page after cursor ordered by the key.

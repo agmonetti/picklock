@@ -135,8 +135,11 @@ func (s *RedisSource) Catalog() store.CatalogDescriptor {
 }
 
 func (s *RedisSource) Browse(ctx context.Context, req store.BrowseRequest) (store.BrowseResponse, error) {
-	if req.ObjectName == "" {
-		return store.BrowseResponse{}, errors.New("no key specified")
+	if err := req.Validate(); err != nil {
+		return store.BrowseResponse{}, err
+	}
+	if err := req.Options.ValidateUnsupported(); err != nil {
+		return store.BrowseResponse{}, err
 	}
 
 	key := req.ObjectName
@@ -155,9 +158,6 @@ func (s *RedisSource) Browse(ctx context.Context, req store.BrowseRequest) (stor
 	var total int64
 	var nextCursor string
 	pageSize := req.PageSize
-	if pageSize <= 0 {
-		pageSize = 50
-	}
 
 	switch kType {
 	case "string":
@@ -478,7 +478,10 @@ func SplitRedisCommands(raw string) []store.Statement {
 
 // Execute runs a Redis command. If a multi-statement buffer is provided,
 // it executes the statement at line using SplitStatements / StatementAt.
-func (e *RedisExecutor) Execute(ctx context.Context, buffer string, line, _maxRows int) (store.DataView, error) {
+func (e *RedisExecutor) Execute(ctx context.Context, buffer string, line int, limits store.QueryLimits) (store.DataView, error) {
+	if err := limits.Validate(); err != nil {
+		return nil, err
+	}
 	trimmed := strings.TrimSpace(buffer)
 	if trimmed == "" {
 		return nil, errors.New("empty command")

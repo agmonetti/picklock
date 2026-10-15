@@ -214,17 +214,28 @@ func (m *Model) renderFooter() string {
 		right = m.spinner.View() + " connecting…"
 	}
 	if right == "" && m.screen == ScreenWorkspace && !m.structure && m.focus != screens.FocusEditor &&
-		m.browser != nil && m.browser.ActiveTable != "" && m.browser.TotalRows > 0 {
-		first := m.browser.Page*m.browser.PageSize + 1
-		last := (m.browser.Page + 1) * m.browser.PageSize
-		if last > m.browser.TotalRows {
-			last = m.browser.TotalRows
+		m.browser != nil && m.browser.ActiveTable != "" && m.browser.TotalRows >= 0 {
+		if m.browser.TotalRows > 0 {
+			first := m.browser.Page*m.browser.PageSize + 1
+			last := (m.browser.Page + 1) * m.browser.PageSize
+			if last > m.browser.TotalRows {
+				last = m.browser.TotalRows
+			}
+			arrow := ""
+			if m.browser.HasNextPage() {
+				arrow = " ▼"
+			}
+			right = fmt.Sprintf("%d-%d/%d%s", first, last, m.browser.TotalRows, arrow)
 		}
+	} else if right == "" && m.screen == ScreenWorkspace && !m.structure && m.focus != screens.FocusEditor &&
+		m.browser != nil && m.browser.ActiveTable != "" && m.browser.TotalRows < 0 && len(m.browser.Rows) > 0 {
+		first := m.browser.Page*m.browser.PageSize + 1
+		last := first + len(m.browser.Rows) - 1
 		arrow := ""
 		if m.browser.HasNextPage() {
 			arrow = " ▼"
 		}
-		right = fmt.Sprintf("%d-%d/%d%s", first, last, m.browser.TotalRows, arrow)
+		right = fmt.Sprintf("%d-%d/?%s", first, last, arrow)
 	}
 
 	pad := (m.width - 2) - lipgloss.Width(left) - lipgloss.Width(right)

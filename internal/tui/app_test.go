@@ -24,6 +24,12 @@ import (
 	"github.com/agmonetti/picklock/internal/tui/screens"
 )
 
+func queryLimitsForRows(maxRows int) store.QueryLimits {
+	limits := store.DefaultQueryLimits()
+	limits.MaxRows = maxRows
+	return limits
+}
+
 // Cursor blink, spinner wait, and flash message timers would block the synchronous step()
 // helper for their real duration; tiny durations keep the tests fast.
 func init() {
@@ -103,7 +109,7 @@ func connect(t *testing.T) *Model {
 
 func execSQL(t *testing.T, m *Model, sql string) {
 	t.Helper()
-	if _, err := m.store.Query().Execute(context.Background(), sql, 0, 100); err != nil {
+	if _, err := m.store.Query().Execute(context.Background(), sql, 0, queryLimitsForRows(100)); err != nil {
 		t.Fatalf("execSQL(%q): %v", sql, err)
 	}
 }
@@ -314,6 +320,7 @@ func TestModel_SidebarFirstLast(t *testing.T) {
 func TestModel_OpenSettingsAndSave(t *testing.T) {
 	t.Setenv("PICKLOCK_CONFIG_DIR", t.TempDir())
 	m := connect(t)
+	m.prefs.SidebarWidth, m.prefs.EditorHeight = 31, 12
 
 	pressKey(t, m, "ctrl+p")
 	if m.screen != ScreenSettings {
@@ -322,34 +329,65 @@ func TestModel_OpenSettingsAndSave(t *testing.T) {
 	if v := m.View(); !strings.Contains(v, "Settings") {
 		t.Errorf("settings screen does not render: %q", v)
 	}
-	// prefill the value as if the user typed it, then save
-	m.settings.SetValue("90")
+	want := m.prefs
+	want.QueryTimeoutSeconds = 90
+	want.BrowsePageSize = 25
+	want.PreviewBytes = 128
+	want.ValueBlockBytes = 32768
+	want.EditorMaxCellBytes = 1024
+	want.EditorMaxResultBytes = 1048576
+	want.EditorMaxRows = 500
+	m.settings.SetPrefs(want)
 	pressKey(t, m, "enter")
 
 	if m.screen != ScreenWorkspace {
 		t.Fatalf("after save screen = %d, want back to workspace", m.screen)
 	}
-	if m.prefs.QueryTimeoutSeconds != 90 {
-		t.Errorf("prefs.QueryTimeoutSeconds = %d, want 90", m.prefs.QueryTimeoutSeconds)
+	if m.prefs != want {
+		t.Errorf("preferences = %+v, want %+v", m.prefs, want)
 	}
 	p, err := prefs.Load()
 	if err != nil {
 		t.Fatalf("prefs.Load: %v", err)
 	}
-	if p.QueryTimeoutSeconds != 90 {
-		t.Errorf("persisted QueryTimeoutSeconds = %d, want 90", p.QueryTimeoutSeconds)
+	if p != want {
+		t.Errorf("persisted preferences = %+v, want %+v", p, want)
+	}
+	// A fresh model restores every limit, and reopening the form retains them.
+	restored := newModel(t)
+	if restored.prefs != want {
+		t.Fatalf("restored preferences = %+v, want %+v", restored.prefs, want)
+	}
+	pressKey(t, restored, "ctrl+p")
+	pressKey(t, restored, "enter")
+	if restored.prefs != want {
+		t.Errorf("unchanged form lost preferences: %+v", restored.prefs)
 	}
 }
 
 func TestModel_SettingsEscBack(t *testing.T) {
+	t.Setenv("PICKLOCK_CONFIG_DIR", t.TempDir())
 	m := connect(t)
+	before := m.prefs
 	pressKey(t, m, "ctrl+p")
 	if m.screen != ScreenSettings {
 		t.Fatalf("screen = %d, want ScreenSettings", m.screen)
 	}
+	changed := before
+	changed.BrowsePageSize = 25
+	changed.PreviewBytes = 128
+	m.settings.SetPrefs(changed)
 	pressKey(t, m, "esc")
 	if m.screen != ScreenWorkspace {
 		t.Errorf("after esc screen = %d, want workspace", m.screen)
+	}
+	if m.prefs != before {
+		t.Errorf("cancel applied preferences: %+v", m.prefs)
+	}
+	pressKey(t, m, "ctrl+p")
+	pressKey(t, m, "enter")
+	if m.prefs != before {
+		t.Errorf("reopened form retained discarded edits: %+v", m.prefs)
 	}
 }
 
@@ -362,6 +400,44 @@ func TestModel_SettingsKeepsContext(t *testing.T) {
 	pressKey(t, m, "esc")
 	if m.screen != ScreenConnect {
 		t.Errorf("after esc screen = %d, want connect", m.screen)
+	}
+}
+
+func TestModel_SettingsInvalidDoesNotCloseOrApply(t *testing.T) {
+	t.Setenv("PICKLOCK_CONFIG_DIR", t.TempDir())
+	m := connect(t)
+	before := m.prefs
+	pressKey(t, m, "ctrl+p")
+	invalid := before
+	invalid.PreviewBytes = invalid.ValueBlockBytes + 1
+	m.settings.SetPrefs(invalid)
+	pressKey(t, m, "enter")
+	if m.screen != ScreenSettings || m.prefs != before {
+		t.Fatalf("invalid form closed/applied: screen=%d prefs=%+v", m.screen, m.prefs)
+	}
+	// The message boundary also rejects invalid preferences.
+	step(t, m, screens.SettingsMsg{Prefs: invalid})
+	if m.screen != ScreenSettings || m.prefs != before {
+		t.Fatalf("invalid message closed/applied: screen=%d prefs=%+v", m.screen, m.prefs)
+	}
+}
+
+func TestModel_SettingsSaveFailureKeepsPreferences(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("PICKLOCK_CONFIG_DIR", dir)
+	m := connect(t)
+	before := m.prefs
+	pressKey(t, m, "ctrl+p")
+	// A file in place of the config directory produces a deterministic save error.
+	if err := os.WriteFile(filepath.Join(dir, "picklock"), []byte("not a directory"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	changed := before
+	changed.QueryTimeoutSeconds = 90
+	m.settings.SetPrefs(changed)
+	pressKey(t, m, "enter")
+	if m.screen != ScreenSettings || m.prefs != before {
+		t.Fatalf("failed Save closed/applied: screen=%d prefs=%+v", m.screen, m.prefs)
 	}
 }
 
@@ -834,6 +910,19 @@ func TestModel_EditorExecutesQuery(t *testing.T) {
 	}
 }
 
+func TestModel_EditorUsesConfiguredRowLimit(t *testing.T) {
+	m := connect(t)
+	m.prefs.EditorMaxRows = 1
+	pressAlt(t, m, "3")
+	press(t, m, "SELECT * FROM users ORDER BY id")
+	pressKey(t, m, "ctrl+r")
+
+	tab, ok := m.editor.Data.(*store.TabularData)
+	if !ok || tab == nil || len(tab.Rows) != 1 || !tab.Truncated {
+		t.Fatalf("configured row cap was not applied: %+v", m.editor.Data)
+	}
+}
+
 func TestModel_EditorEmptyBufferShowsNotice(t *testing.T) {
 	m := connect(t)
 	pressAlt(t, m, "3")
@@ -899,9 +988,10 @@ func TestModel_AutoRefreshAfterInsert(t *testing.T) {
 		t.Fatalf("insert did not run: %+v", m.editor)
 	}
 
-	// a write query auto-refreshes the open table without pressing r
-	if m.browser.TotalRows != 3 {
-		t.Errorf("TotalRows = %d, want 3 after auto-refresh", m.browser.TotalRows)
+	// a write query auto-refreshes the open table without pressing r. SQL
+	// browsing uses lookahead instead of an exact COUNT(*).
+	if len(m.browser.Rows) != 3 || m.browser.TotalRows != -1 {
+		t.Errorf("after auto-refresh rows=%d total=%d, want 3/unknown", len(m.browser.Rows), m.browser.TotalRows)
 	}
 	v := m.View()
 	if !strings.Contains(v, "Carol") {
@@ -926,9 +1016,23 @@ func TestModel_AutoRefreshAfterInsertReturning(t *testing.T) {
 	}
 
 	// RETURNING returns rows (Affected = -1) but the data changed: the browser
-	// must still auto-refresh.
-	if m.browser.TotalRows != 3 {
-		t.Errorf("TotalRows = %d, want 3 after auto-refresh (RETURNING)", m.browser.TotalRows)
+	// must still auto-refresh without requiring an exact COUNT(*).
+	if len(m.browser.Rows) != 3 || m.browser.TotalRows != -1 {
+		t.Errorf("after auto-refresh rows=%d total=%d, want 3/unknown", len(m.browser.Rows), m.browser.TotalRows)
+	}
+}
+
+func TestUnknownRelationalTotalShowsLookaheadFooter(t *testing.T) {
+	m := connect(t)
+	m.focus = screens.FocusMain
+	m.browser.ActiveTable = "users"
+	m.browser.Page = 1
+	m.browser.PageSize = 50
+	m.browser.TotalRows = -1
+	m.browser.Rows = [][]string{{"last-page-row"}}
+
+	if footer := m.renderFooter(); !strings.Contains(footer, "51-51/?") {
+		t.Errorf("footer = %q, want unknown total and current page range", footer)
 	}
 }
 
