@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"os"
+	"strconv"
 	"testing"
 
 	"github.com/agmonetti/picklock/internal/conn"
@@ -17,6 +18,13 @@ func envCfg(t *testing.T, prefix string) conn.ConnectionConfig {
 		t.Skipf("env %s_HOST not set; skipping integration test", prefix)
 	}
 	port := 3306
+	if raw := os.Getenv(prefix + "_PORT"); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed < 1 || parsed > 65535 {
+			t.Fatalf("invalid %s_PORT %q", prefix, raw)
+		}
+		port = parsed
+	}
 	return conn.ConnectionConfig{
 		Driver:   conn.DriverMySQL,
 		Host:     host,
@@ -25,6 +33,126 @@ func envCfg(t *testing.T, prefix string) conn.ConnectionConfig {
 		Password: os.Getenv(prefix + "_PASSWORD"),
 		Database: os.Getenv(prefix + "_DATABASE"),
 	}
+}
+
+// TestIntegrationProductImages exercises the reported large-text column without
+// modifying the fixture database.
+func TestIntegrationProductImages(t *testing.T) {
+	cfg := envCfg(t, "PICKLOCK_TEST_PRODUCT_IMAGES")
+	cfg.Driver = conn.DriverMySQL
+	s, err := NewMySQL(cfg)
+	if err != nil {
+		t.Fatalf("NewMySQL: %v", err)
+	}
+	defer s.Close()
+
+	browser := store.NewRelationalAdapter(s, cfg)
+	projected, err := browser.Browse(context.Background(), store.BrowseRequest{
+		ObjectName: "product_images",
+		PageSize:   10,
+		Options:    store.BrowseOptions{Columns: []string{"id", "mime_type"}},
+	})
+	if err != nil {
+		t.Fatalf("Browse projected product_images: %v", err)
+	}
+	projectedData, ok := projected.Data.(*store.TabularData)
+	if !ok || len(projectedData.Columns) != 2 || len(projectedData.Rows) == 0 {
+		t.Fatalf("projected Browse = %#v, want rows with id and mime_type", projected.Data)
+	}
+	t.Logf("projection: %d rows, columns %v; image_data omitted", len(projectedData.Rows), projectedData.Columns)
+
+	var largestID, largestSize int64
+	if err := s.db.QueryRow("SELECT id, OCTET_LENGTH(image_data) FROM product_images ORDER BY OCTET_LENGTH(image_data) DESC, id LIMIT 1").Scan(&largestID, &largestSize); err != nil {
+		t.Fatalf("query largest image_data metadata: %v", err)
+	}
+	if largestSize <= 64 {
+		t.Fatalf("largest image_data is %d bytes, want more than preview budget", largestSize)
+	}
+
+	imageColumn := -1
+	cursor, pages, rows := "", 0, 0
+	for {
+		page, err := browser.Browse(context.Background(), store.BrowseRequest{
+			ObjectName: "product_images",
+			PageSize:   50,
+			Cursor:     cursor,
+			Options:    store.BrowseOptions{PreviewBytes: 64},
+		})
+		if err != nil {
+			t.Fatalf("Browse product_images page %d: %v", pages, err)
+		}
+		data, ok := page.Data.(*store.TabularData)
+		if !ok || len(data.Rows) == 0 {
+			t.Fatalf("Browse product_images page %d = %#v, want rows", pages, page.Data)
+		}
+		if imageColumn < 0 {
+			for i, column := range data.Columns {
+				if column == "image_data" {
+					imageColumn = i
+					break
+				}
+			}
+			if imageColumn < 0 {
+				t.Fatalf("Browse columns %v do not include image_data", data.Columns)
+			}
+		}
+		for rowIndex, row := range data.Rows {
+			position := store.CellPosition{Row: rowIndex, Column: imageColumn}
+			state, incomplete := data.Incomplete[position]
+			if !incomplete || state.State != store.CellPreview || len(row[imageColumn]) > 64 {
+				t.Fatalf("image_data preview page=%d row=%d value_bytes=%d metadata=%+v present=%v", pages, rowIndex, len(row[imageColumn]), state, incomplete)
+			}
+		}
+		rows += len(data.Rows)
+		pages++
+		if !page.HasNext {
+			break
+		}
+		cursor = page.NextCursor
+		if cursor == "" {
+			t.Fatalf("Browse page %d reports HasNext without a cursor", pages)
+		}
+	}
+	if rows == 0 {
+		t.Fatal("product_images Browse returned no rows")
+	}
+
+	largestPage, err := browser.Browse(context.Background(), store.BrowseRequest{
+		ObjectName: "product_images",
+		PageSize:   1,
+		Options: store.BrowseOptions{
+			Columns: []string{"id"},
+			Filters: []store.BrowseFilter{{Column: "id", Operator: store.FilterEqual, Value: store.TypedValue{Value: largestID}}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Browse largest product_images row: %v", err)
+	}
+	largestData, ok := largestPage.Data.(*store.TabularData)
+	if !ok || len(largestData.Rows) != 1 || largestData.RowRef(0) == nil {
+		t.Fatalf("Browse largest row = %#v, want one row with stable identity", largestPage.Data)
+	}
+	if largestData.Rows[0][0] != strconv.FormatInt(largestID, 10) {
+		t.Fatalf("largest row id = %q, want %d", largestData.Rows[0][0], largestID)
+	}
+
+	cell, err := browser.ReadCell(context.Background(), store.CellReadRequest{
+		Row:        largestData.RowRef(0),
+		Column:     "image_data",
+		BlockBytes: 64 << 10,
+	})
+	if err != nil {
+		t.Fatalf("ReadCell largest image_data: %v", err)
+	}
+	if cell.Reader == nil || cell.SizeBytes == nil || *cell.SizeBytes != largestSize {
+		t.Fatalf("ReadCell metadata = %+v, scanned maximum size=%d", cell, largestSize)
+	}
+	defer cell.Reader.Close()
+	readBytes, err := io.Copy(io.Discard, cell.Reader)
+	if err != nil || readBytes != largestSize {
+		t.Fatalf("ReadCell image_data streamed %d bytes, want %d, err=%v", readBytes, largestSize, err)
+	}
+	t.Logf("paged through %d rows in %d pages with <=64-byte image previews; streamed largest image_data in bounded blocks: %d bytes", rows, pages, readBytes)
 }
 
 // TestIntegrationMySQL exercises the engine against a real MySQL.
