@@ -1774,7 +1774,7 @@ func TestModel_HeavyBrowsePromptPreservesActiveViewOnCancel(t *testing.T) {
 	if m.browseDialog != browseDialogOptions {
 		t.Fatal("browse options key did not reopen the form")
 	}
-	step(t, m, tea.MouseMsg{X: 5, Y: 5, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+	step(t, m, tea.MouseMsg{X: 20, Y: 9, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
 	pressKey(t, m, "tab")                      // filter column
 	pressKey(t, m, "down")                     // name
 	pressKey(t, m, "tab")                      // operator (=)
@@ -1786,5 +1786,82 @@ func TestModel_HeavyBrowsePromptPreservesActiveViewOnCancel(t *testing.T) {
 	if m.browser.ActiveTable != "users" || len(m.browser.Rows) != 1 ||
 		len(m.browser.Rows[0]) != 1 || m.browser.Rows[0][0] != "1" {
 		t.Fatalf("applied browse options returned rows=%v", m.browser.Rows)
+	}
+}
+
+func TestModel_BrowseDialogRenderAndMouse(t *testing.T) {
+	autoExploreInTests = false
+	t.Cleanup(func() { autoExploreInTests = true })
+	m := connect(t)
+	users := -1
+	for i, name := range m.browser.Tables {
+		if name == "users" {
+			users = i
+			break
+		}
+	}
+	if users < 0 {
+		t.Fatal("users table missing")
+	}
+	cmd := m.selectTable(users)
+	step(t, m, cmd())
+	if m.browseDialog != browseDialogNotice {
+		t.Fatalf("dialog = %v, want notice", m.browseDialog)
+	}
+
+	// Verify Notice render output
+	renderedNotice := m.View()
+	if !strings.Contains(renderedNotice, "Potentially heavy table") {
+		t.Fatalf("expected title in notice, got: %s", renderedNotice)
+	}
+	if !strings.Contains(renderedNotice, "users") {
+		t.Fatalf("expected table pill in notice, got: %s", renderedNotice)
+	}
+	if !strings.Contains(renderedNotice, "Explore safely") {
+		t.Fatalf("expected button in notice, got: %s", renderedNotice)
+	}
+
+	// Test mouse click on 'a' (Narrow / Filter button)
+	narrowClick := browseClick{}
+	for _, c := range m.browseClicks {
+		if c.kind == browseClickNoticeNarrow {
+			narrowClick = c
+			break
+		}
+	}
+	if narrowClick.kind == browseClickNone {
+		t.Fatal("narrow button click target not recorded")
+	}
+	step(t, m, tea.MouseMsg{X: narrowClick.xMin + 1, Y: narrowClick.y, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+	if m.browseDialog != browseDialogOptions {
+		t.Fatalf("dialog = %v, want options after mouse click on narrow", m.browseDialog)
+	}
+
+	// Verify Options render output
+	renderedOptions := m.View()
+	if !strings.Contains(renderedOptions, "Browse options") {
+		t.Fatalf("expected title in options, got: %s", renderedOptions)
+	}
+	if !strings.Contains(renderedOptions, "Filter:") {
+		t.Fatalf("expected filter section in options, got: %s", renderedOptions)
+	}
+	if !strings.Contains(renderedOptions, "Page:") {
+		t.Fatalf("expected page section in options, got: %s", renderedOptions)
+	}
+
+	// Test mouse click on Cancel button
+	cancelClick := browseClick{}
+	for _, c := range m.browseClicks {
+		if c.kind == browseClickOptionCancel {
+			cancelClick = c
+			break
+		}
+	}
+	if cancelClick.kind == browseClickNone {
+		t.Fatal("cancel button click target not recorded in options")
+	}
+	step(t, m, tea.MouseMsg{X: cancelClick.xMin + 1, Y: cancelClick.y, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+	if m.browseDialog != browseDialogNone {
+		t.Fatalf("dialog = %v, want none after cancel click", m.browseDialog)
 	}
 }

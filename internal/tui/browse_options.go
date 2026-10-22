@@ -7,12 +7,38 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/agmonetti/picklock/internal/browser"
 	"github.com/agmonetti/picklock/internal/conn"
 	"github.com/agmonetti/picklock/internal/store"
+	"github.com/agmonetti/picklock/internal/tui/screens"
 	"github.com/agmonetti/picklock/internal/tui/styles"
 )
+
+type browseClickKind int
+
+const (
+	browseClickNone browseClickKind = iota
+	browseClickNoticeExplore
+	browseClickNoticeNarrow
+	browseClickNoticeCancel
+	browseClickOptionColumn
+	browseClickOptionFilterCol
+	browseClickOptionFilterOp
+	browseClickOptionFilterVal
+	browseClickOptionPageSize
+	browseClickOptionApply
+	browseClickOptionCancel
+)
+
+type browseClick struct {
+	kind browseClickKind
+	idx  int
+	y    int
+	xMin int
+	xMax int
+}
 
 func browseSignature(item *browser.PreparedItem) string {
 	if item == nil || item.Structure == nil {
@@ -299,40 +325,289 @@ func (m *Model) clearBrowseDialog() {
 	m.browseInitial = false
 	m.browseFilterInput.Blur()
 	m.browsePageInput.Blur()
+	m.browseClicks = nil
 }
 
-func (m *Model) renderBrowseDialog(width int) string {
-	var b strings.Builder
+func (m *Model) renderBrowseDialog(width, height int) string {
 	if m.browseDialog == browseDialogNotice {
-		fmt.Fprintf(&b, "%s\n\nTable %q contains potentially heavy columns:\n", styles.StyleHeader.Render("Explore table"), m.browsePrepared.Name)
-		for _, col := range m.heavyTypes() {
-			fmt.Fprintf(&b, "  %s\n", col)
-		}
-		b.WriteString("\n[e] Explore safely   [a] Narrow columns / filter   [c] Cancel")
-		return styles.StyleOuterMargin.Render(b.String())
+		return m.renderBrowseNotice(width, height)
 	}
+	return m.renderBrowseOptions(width, height)
+}
+
+func (m *Model) renderBrowseNotice(width, height int) string {
+	modalW := 66
+	if width-4 < modalW {
+		modalW = width - 4
+	}
+	if modalW < 40 {
+		modalW = 40
+	}
+	innerW := modalW - 6
+	if innerW < 34 {
+		innerW = 34
+	}
+
+	var b strings.Builder
+	tableName := ""
+	if m.browsePrepared != nil {
+		tableName = m.browsePrepared.Name
+	}
+
+	header := styles.StyleHeader.Render("Potentially heavy table")
+	if tableName != "" {
+		header += "  " + styles.StylePillTable.Render(tableName)
+	}
+	b.WriteString(header)
+	b.WriteString("\n\n")
+
+	b.WriteString(styles.StyleHeaderDim.Render("This table contains columns with potentially large payloads:"))
+	b.WriteString("\n\n")
+
+	heavy := m.heavyTypes()
+	for _, col := range heavy {
+		parts := strings.SplitN(col, " · ", 2)
+		name := parts[0]
+		typ := ""
+		if len(parts) > 1 {
+			typ = parts[1]
+		}
+		b.WriteString("  " + styles.StyleSidebarActive.Render("• ") +
+			styles.StyleColHeader.Render(name) + " " +
+			styles.StyleHeaderDim.Render("("+typ+")") + "\n")
+	}
+
+	b.WriteString("\n")
+	b.WriteString(styles.StyleHeaderDim.Render("Full payloads are deferred by default to protect memory."))
+	b.WriteString("\n\n")
+	b.WriteString(styles.StyleBorder.Render(strings.Repeat("─", innerW)))
+	b.WriteString("\n\n")
+
+	btnExplore := styles.StyleBtnPrimary.Render("e · Explore safely")
+	btnNarrow := styles.StyleBtnSecondary.Render("a · Filter / Narrow")
+	btnCancel := styles.StyleBtnSecondary.Render("esc · Cancel")
+	b.WriteString(btnExplore + "  " + btnNarrow + "  " + btnCancel)
+
+	modalBox := styles.StylePaneFocus.Width(modalW).Padding(1, 2).Render(b.String())
+	content := lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, modalBox)
+
+	boxH := lipgloss.Height(modalBox)
+	topPad := (height - boxH) / 2
+	if topPad < 0 {
+		topPad = 0
+	}
+	leftPad := (width - modalW) / 2
+	if leftPad < 0 {
+		leftPad = 0
+	}
+
+	innerBaseY := 2 + topPad + 2
+	buttonY := innerBaseY + 6 + len(heavy)
+
+	wExplore := lipgloss.Width(btnExplore)
+	wNarrow := lipgloss.Width(btnNarrow)
+	wCancel := lipgloss.Width(btnCancel)
+
+	x0 := 1 + leftPad + 3
+	x1 := x0 + wExplore
+	x2 := x1 + 2 + wNarrow
+	x3 := x2 + 2 + wCancel
+
+	m.browseClicks = []browseClick{
+		{kind: browseClickNoticeExplore, y: buttonY, xMin: x0, xMax: x1},
+		{kind: browseClickNoticeNarrow, y: buttonY, xMin: x1 + 2, xMax: x2},
+		{kind: browseClickNoticeCancel, y: buttonY, xMin: x2 + 2, xMax: x3},
+	}
+
+	lines := strings.Split(content, "\n")
+	if len(lines) > height {
+		lines = lines[:height]
+	}
+	return strings.Join(lines, "\n")
+}
+
+func (m *Model) renderBrowseOptions(width, height int) string {
+	modalW := 74
+	if width-4 < modalW {
+		modalW = width - 4
+	}
+	if modalW < 46 {
+		modalW = 46
+	}
+	innerW := modalW - 6
+	if innerW < 40 {
+		innerW = 40
+	}
+
 	cols := m.browsePreparedColumns()
-	fmt.Fprintf(&b, "%s · %s\n\n", styles.StyleHeader.Render("Browse options"), m.browsePrepared.Name)
-	b.WriteString("Columns (space toggles; none selected means all):\n")
-	for i, col := range cols {
+	var b strings.Builder
+
+	tableName := ""
+	if m.browsePrepared != nil {
+		tableName = m.browsePrepared.Name
+	}
+
+	header := styles.StyleHeader.Render("Browse options")
+	if tableName != "" {
+		header += "  " + styles.StylePillTable.Render(tableName)
+	}
+	b.WriteString(header)
+	b.WriteString("\n\n")
+
+	b.WriteString(styles.StyleFieldLabel.Render("Columns") + " " + styles.StyleHeaderDim.Render("(space toggles · none selected means all):") + "\n")
+
+	maxColsH := 5
+	if height < 24 {
+		maxColsH = 3
+	}
+	startCol, countCol := screens.ListWindow(len(cols), m.browseColumnCursor, maxColsH)
+	if countCol == 0 && len(cols) > 0 {
+		countCol = len(cols)
+	}
+
+	var clicks []browseClick
+
+	for i := startCol; i < startCol+countCol; i++ {
+		col := cols[i]
 		mark := "[ ]"
 		if m.browseColumns[i] {
 			mark = "[x]"
 		}
 		cursor := "  "
-		if i == m.browseColumnCursor {
+		colName := col.Name
+		if i == m.browseColumnCursor && m.browseFormFocus == 0 {
 			cursor = "> "
+			colName = styles.StyleSidebarActive.Render(colName)
+		} else {
+			colName = styles.StyleColHeader.Render(colName)
 		}
-		fmt.Fprintf(&b, "%s%s %s (%s)\n", cursor, mark, col.Name, col.Type)
+		line := fmt.Sprintf("%s%s %s %s\n", cursor, mark, colName, styles.StyleHeaderDim.Render("("+col.Type+")"))
+		b.WriteString(line)
 	}
 	if len(cols) == 0 {
-		b.WriteString("  Column selection is unavailable for this source.\n")
+		b.WriteString(styles.StyleHeaderDim.Render("  Column selection is unavailable for this source.") + "\n")
 	}
-	fmt.Fprintf(&b, "\nFilter column: %s   operator: %s   enabled: %t\n", browseFilterColumnName(cols, m.browseFilterColumn), browseOperators[m.browseFilterOperator], m.browseFilterEnabled)
-	fmt.Fprintf(&b, "Filter value: %s\n", m.browseFilterInput.View())
-	fmt.Fprintf(&b, "Rows per page: %s\n\n", m.browsePageInput.View())
-	b.WriteString("Tab changes control · ↑/↓ choose · space toggle/cycle · Enter apply · Esc cancel")
-	return styles.StyleOuterMargin.Render(b.String())
+
+	b.WriteString("\n")
+	b.WriteString(styles.StyleBorder.Render(strings.Repeat("─", innerW)))
+	b.WriteString("\n\n")
+
+	colBox := styles.StyleInputBox
+	if m.browseFormFocus == 1 {
+		colBox = styles.StyleInputBoxFocus
+	}
+	opBox := styles.StyleInputBox
+	if m.browseFormFocus == 2 {
+		opBox = styles.StyleInputBoxFocus
+	}
+	valBox := styles.StyleInputBox
+	if m.browseFormFocus == 3 {
+		valBox = styles.StyleInputBoxFocus
+	}
+	pageBox := styles.StyleInputBox
+	if m.browseFormFocus == 4 {
+		pageBox = styles.StyleInputBoxFocus
+	}
+
+	filterColName := browseFilterColumnName(cols, m.browseFilterColumn)
+	filterOp := browseOperators[m.browseFilterOperator]
+	enabledMark := "[ ] disabled"
+	if m.browseFilterEnabled {
+		enabledMark = "[x] active"
+	}
+
+	b.WriteString(styles.StyleFieldLabel.Render("Filter: ") +
+		colBox.Render(fmt.Sprintf("[ col: %s ]", filterColName)) + "  " +
+		opBox.Render(fmt.Sprintf("[ op: %s ]", filterOp)) + "  " +
+		styles.StyleHeaderDim.Render(enabledMark) + "\n")
+
+	b.WriteString(styles.StyleFieldLabel.Render("Value:  ") +
+		valBox.Render(fmt.Sprintf("[ %s ]", m.browseFilterInput.View())) + "\n")
+
+	b.WriteString(styles.StyleFieldLabel.Render("Page:   ") +
+		pageBox.Render(fmt.Sprintf("[ %s rows ]", m.browsePageInput.View())) + "\n\n")
+
+	b.WriteString(styles.StyleBorder.Render(strings.Repeat("─", innerW)))
+	b.WriteString("\n\n")
+
+	btnApply := styles.StyleBtnPrimary.Render("Enter · Apply")
+	btnCancel := styles.StyleBtnSecondary.Render("esc · Cancel")
+	b.WriteString(btnApply + "  " + btnCancel + "\n")
+	b.WriteString(styles.StyleHeaderDim.Render("Tab next · Space toggle/cycle · ↑/↓ choose"))
+
+	modalBox := styles.StylePaneFocus.Width(modalW).Padding(1, 2).Render(b.String())
+	content := lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, modalBox)
+
+	boxH := lipgloss.Height(modalBox)
+	topPad := (height - boxH) / 2
+	if topPad < 0 {
+		topPad = 0
+	}
+	leftPad := (width - modalW) / 2
+	if leftPad < 0 {
+		leftPad = 0
+	}
+
+	baseY := 2 + topPad + 2
+	colStartY := baseY + 3
+	for i := 0; i < countCol; i++ {
+		clicks = append(clicks, browseClick{
+			kind: browseClickOptionColumn,
+			idx:  startCol + i,
+			y:    colStartY + i,
+		})
+	}
+
+	filterRow1Y := colStartY + countCol + 3
+	clicks = append(clicks, browseClick{
+		kind: browseClickOptionFilterCol,
+		y:    filterRow1Y,
+		xMin: 0,
+		xMax: leftPad + 30,
+	})
+	clicks = append(clicks, browseClick{
+		kind: browseClickOptionFilterOp,
+		y:    filterRow1Y,
+		xMin: leftPad + 31,
+		xMax: width,
+	})
+
+	filterRow2Y := filterRow1Y + 1
+	clicks = append(clicks, browseClick{
+		kind: browseClickOptionFilterVal,
+		y:    filterRow2Y,
+	})
+
+	pageRowY := filterRow2Y + 1
+	clicks = append(clicks, browseClick{
+		kind: browseClickOptionPageSize,
+		y:    pageRowY,
+	})
+
+	btnRowY := pageRowY + 4
+	wApply := lipgloss.Width(btnApply)
+	xBtn0 := 1 + leftPad + 3
+	xBtn1 := xBtn0 + wApply
+	clicks = append(clicks, browseClick{
+		kind: browseClickOptionApply,
+		y:    btnRowY,
+		xMin: xBtn0,
+		xMax: xBtn1,
+	})
+	clicks = append(clicks, browseClick{
+		kind: browseClickOptionCancel,
+		y:    btnRowY,
+		xMin: xBtn1 + 2,
+		xMax: width,
+	})
+
+	m.browseClicks = clicks
+
+	lines := strings.Split(content, "\n")
+	if len(lines) > height {
+		lines = lines[:height]
+	}
+	return strings.Join(lines, "\n")
 }
 
 func browseFilterColumnName(cols []store.Column, i int) string {
@@ -341,50 +616,71 @@ func browseFilterColumnName(cols []store.Column, i int) string {
 	}
 	return cols[i].Name
 }
+
 func (m *Model) handleBrowseDialogMouse(msg tea.MouseMsg) tea.Cmd {
 	if msg.Action != tea.MouseActionPress || msg.Button != tea.MouseButtonLeft {
 		return nil
 	}
-	if m.browseDialog == browseDialogNotice {
-		if msg.Y-2 != 4+len(m.heavyTypes()) {
-			return nil
+	if len(m.browseClicks) == 0 {
+		innerW := m.width - 2
+		if innerW < 1 {
+			innerW = 1
 		}
-		switch {
-		case msg.X < m.width/3:
-			return m.applyPreparedBrowse(m.defaultBrowseOptions(), m.prefs.BrowsePageSize, true)
-		case msg.X < 2*m.width/3:
-			m.openBrowseOptions()
-		default:
-			m.cancelBrowseDialog()
+		contentH := m.height - 4
+		if contentH < 1 {
+			contentH = 1
 		}
-		return nil
+		m.renderBrowseDialog(innerW, contentH)
 	}
-	cols := m.browsePreparedColumns()
-	rows, extra := len(cols), 0
-	if rows == 0 {
-		rows, extra = 1, 1
-	}
-	y := msg.Y - 2
-	switch {
-	case y >= 3 && y < 3+len(cols):
-		m.browseColumnCursor = y - 3
-		m.browseColumns[m.browseColumnCursor] = !m.browseColumns[m.browseColumnCursor]
-		m.browseFormFocus = 0
-	case y == 4+rows+extra:
-		m.browseFormFocus = 1
-	case y == 5+rows+extra:
-		m.browseFormFocus = 3
-		m.browsePageInput.Blur()
-		m.browseFilterInput.Focus()
-	case y == 6+rows+extra:
-		m.browseFormFocus = 4
-		m.browseFilterInput.Blur()
-		m.browsePageInput.Focus()
-	case y == 8+rows+extra:
-		if msg.X < m.width/2 {
-			return m.submitBrowseOptions()
+	for _, c := range m.browseClicks {
+		if c.y == msg.Y {
+			if (c.xMin > 0 || c.xMax > 0) && (msg.X < c.xMin || msg.X > c.xMax) {
+				continue
+			}
+			switch c.kind {
+			case browseClickNoticeExplore:
+				return m.applyPreparedBrowse(m.defaultBrowseOptions(), m.prefs.BrowsePageSize, true)
+			case browseClickNoticeNarrow:
+				m.openBrowseOptions()
+				return nil
+			case browseClickNoticeCancel:
+				m.cancelBrowseDialog()
+				return nil
+			case browseClickOptionColumn:
+				m.browseColumnCursor = c.idx
+				if c.idx >= 0 && c.idx < len(m.browseColumns) {
+					m.browseColumns[c.idx] = !m.browseColumns[c.idx]
+				}
+				m.browseFormFocus = 0
+				return nil
+			case browseClickOptionFilterCol:
+				m.browseFormFocus = 1
+				m.browsePageInput.Blur()
+				m.browseFilterInput.Blur()
+				return nil
+			case browseClickOptionFilterOp:
+				m.browseFormFocus = 2
+				m.browseFilterOperator = (m.browseFilterOperator + 1) % len(browseOperators)
+				m.browsePageInput.Blur()
+				m.browseFilterInput.Blur()
+				return nil
+			case browseClickOptionFilterVal:
+				m.browseFormFocus = 3
+				m.browsePageInput.Blur()
+				m.browseFilterInput.Focus()
+				return nil
+			case browseClickOptionPageSize:
+				m.browseFormFocus = 4
+				m.browseFilterInput.Blur()
+				m.browsePageInput.Focus()
+				return nil
+			case browseClickOptionApply:
+				return m.submitBrowseOptions()
+			case browseClickOptionCancel:
+				m.cancelBrowseDialog()
+				return nil
+			}
 		}
-		m.cancelBrowseDialog()
 	}
 	return nil
 }

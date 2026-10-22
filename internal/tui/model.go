@@ -171,6 +171,7 @@ type Model struct {
 	browseRefreshCurrent    bool
 	pendingBrowseAcceptance string
 	browseForceOptions      bool
+	browseClicks            []browseClick
 
 	exporting    bool
 	detailSaving bool

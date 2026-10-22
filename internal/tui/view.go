@@ -40,7 +40,7 @@ func (m *Model) render() string {
 		content = m.settings.View(innerW, contentHeight)
 	case ScreenWorkspace:
 		if m.browseDialog != browseDialogNone {
-			content = m.renderBrowseDialog(innerW)
+			content = m.renderBrowseDialog(innerW, contentHeight)
 		} else if m.showDetail && m.detailSaving {
 			content = m.renderDetailSavePrompt(innerW, contentHeight)
 		} else if m.showDetail {
