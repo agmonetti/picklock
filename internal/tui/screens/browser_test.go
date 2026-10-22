@@ -748,3 +748,62 @@ func BenchmarkRenderMainBrowserHeavyCell(b *testing.B) {
 }
 
 var renderBenchmarkOutput string
+
+func TestRenderMainBrowser_RowNumbers(t *testing.T) {
+	b := &browser.Browser{
+		ActiveTable: "clinical_entries",
+		Tables:      []string{"clinical_entries"},
+		Data: &store.TabularData{
+			Columns: []string{"id", "notes"},
+			Rows: [][]string{
+				{"1", "note 1"},
+				{"2", "note 2"},
+				{"3", "note 3"},
+			},
+		},
+		Cursor: 1, // row 2 selected
+	}
+
+	out := RenderMainBrowser(b, 0, 80, 10)
+	plain := ansi.Strip(out)
+
+	// Check header contains #
+	if !strings.Contains(plain, "#") {
+		t.Fatalf("expected # in header: %q", plain)
+	}
+
+	// Check rows contain 1, 2, 3
+	for _, want := range []string{" 1 |", " 2 |", " 3 |"} {
+		if !strings.Contains(plain, want) {
+			t.Fatalf("expected row number %q in output: %q", want, plain)
+		}
+	}
+
+	// Check row 1 (index 1, row number 2) is highlighted
+	lines := strings.Split(out, "\n")
+	// line 0: header, line 1: separator, line 2: row 1, line 3: row 2 (cursor)
+	if !hasBackground(lines[3]) {
+		t.Errorf("cursor row (line 3) must be highlighted with background: %q", lines[3])
+	}
+	if hasBackground(lines[2]) {
+		t.Errorf("non-cursor row (line 2) must not have background: %q", lines[2])
+	}
+
+	// Check pagination: Page 1 with PageSize 50 -> rows start at 51
+	b.Page = 1
+	b.PageSize = 50
+	outPage2 := RenderMainBrowser(b, 0, 80, 10)
+	plainPage2 := ansi.Strip(outPage2)
+	for _, want := range []string{"51 |", "52 |", "53 |"} {
+		if !strings.Contains(plainPage2, want) {
+			t.Fatalf("expected page 2 row number %q in output: %q", want, plainPage2)
+		}
+	}
+
+	// Check narrow width disables gutter
+	outNarrow := RenderMainBrowser(b, 0, 20, 10)
+	plainNarrow := ansi.Strip(outNarrow)
+	if strings.Contains(plainNarrow, "#") {
+		t.Fatalf("narrow width should omit row number gutter: %q", plainNarrow)
+	}
+}

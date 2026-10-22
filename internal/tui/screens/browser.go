@@ -2,6 +2,7 @@ package screens
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/clipperhouse/uax29/v2/graphemes"
@@ -221,6 +222,11 @@ func RenderMainBrowser(b *browser.Browser, colScroll, width, height int) (out st
 		}
 		return styles.StyleHeaderDim.Render(fmt.Sprintf("no %s — use the editor to create data", noun))
 	}
+	rowNumBase := 0
+	if b.ActiveTable != "" {
+		rowNumBase = b.Page*b.PageSize + 1
+	}
+
 	if b.Data == nil {
 		if len(b.Columns) > 0 {
 			cols := make([]string, len(b.Columns))
@@ -230,7 +236,7 @@ func RenderMainBrowser(b *browser.Browser, colScroll, width, height int) (out st
 			if len(b.Rows) == 0 {
 				return renderEmptyTable(cols, b.Cursor, colScroll, width)
 			}
-			return RenderDataTableWithNulls(cols, b.Rows, b.Nulls, b.Cursor, colScroll, width, height)
+			return renderDataTable(cols, b.Rows, b.Nulls, nil, 0, rowNumBase, b.Cursor, colScroll, width, height)
 		}
 		return styles.StyleHeaderDim.Render("select an item")
 	}
@@ -251,7 +257,7 @@ func RenderMainBrowser(b *browser.Browser, colScroll, width, height int) (out st
 		if len(v.Rows) == 0 {
 			return renderEmptyTable(cols, b.Cursor, colScroll, width)
 		}
-		return renderDataTable(cols, v.Rows, v.Nulls, v.Incomplete, 0, b.Cursor, colScroll, width, height)
+		return renderDataTable(cols, v.Rows, v.Nulls, v.Incomplete, 0, rowNumBase, b.Cursor, colScroll, width, height)
 
 	case *store.DocumentData:
 		return RenderDocumentList(v, b.Cursor, width, height)
@@ -275,7 +281,7 @@ func RenderMainBrowser(b *browser.Browser, colScroll, width, height int) (out st
 			if len(b.Rows) == 0 {
 				return renderEmptyTable(cols, b.Cursor, colScroll, width)
 			}
-			return RenderDataTableWithNulls(cols, b.Rows, b.Nulls, b.Cursor, colScroll, width, height)
+			return renderDataTable(cols, b.Rows, b.Nulls, nil, 0, rowNumBase, b.Cursor, colScroll, width, height)
 		}
 		return styles.StyleHeaderDim.Render("unsupported view format")
 	}
@@ -365,7 +371,7 @@ func RenderKeyValue(kv *store.KeyValueData, cursor, width, height int) string {
 		}
 	}
 	header := styles.StyleHeaderDim.Render(fmt.Sprintf("Key: %s · Type: %s · TTL: %s", kv.Key, kv.Type, kv.TTL))
-	table := renderDataTable(cols, rows, nil, incomplete, 0, cursor, 0, width, height-2)
+	table := renderDataTable(cols, rows, nil, incomplete, 0, 0, cursor, 0, width, height-2)
 	return header + "\n" + table
 }
 
@@ -442,7 +448,12 @@ func RenderDataTable(cols []string, rows [][]string, cursor, colScroll, width, h
 
 // RenderDataTableWithNulls renders columns + rows with null indicators from the nulls mask.
 func RenderDataTableWithNulls(cols []string, rows [][]string, nulls [][]bool, cursor, colScroll, width, height int) string {
-	return renderDataTable(cols, rows, nulls, nil, 0, cursor, colScroll, width, height)
+	return renderDataTable(cols, rows, nulls, nil, 0, 0, cursor, colScroll, width, height)
+}
+
+// RenderDataTableNumbered renders columns + rows with 1-based row numbering.
+func RenderDataTableNumbered(cols []string, rows [][]string, rowNumBase, cursor, colScroll, width, height int) string {
+	return renderDataTable(cols, rows, nil, nil, 0, rowNumBase, cursor, colScroll, width, height)
 }
 
 // RenderTabularData preserves absolute metadata positions while the editor scrolls.
@@ -452,12 +463,29 @@ func RenderTabularData(data *store.TabularData, rowOffset, cursor, colScroll, wi
 	if rowOffset < len(data.Nulls) {
 		nulls = data.Nulls[rowOffset:]
 	}
-	return renderDataTable(data.Columns, data.Rows[rowOffset:], nulls, data.Incomplete, rowOffset, cursor, colScroll, width, height)
+	return renderDataTable(data.Columns, data.Rows[rowOffset:], nulls, data.Incomplete, rowOffset, 0, cursor, colScroll, width, height)
 }
 
-func renderDataTable(cols []string, rows [][]string, nulls [][]bool, incomplete map[store.CellPosition]store.IncompleteCell, rowOffset, cursor, colScroll, width, height int) string {
+func renderDataTable(cols []string, rows [][]string, nulls [][]bool, incomplete map[store.CellPosition]store.IncompleteCell, rowOffset, rowNumBase, cursor, colScroll, width, height int) string {
 	if len(cols) == 0 {
 		return ""
+	}
+
+	numWidth := 0
+	if rowNumBase > 0 && width >= 25 {
+		maxNum := rowNumBase + len(rows) - 1
+		numWidth = len(strconv.Itoa(maxNum))
+		if numWidth < 2 {
+			numWidth = 2
+		}
+	}
+
+	dataWidth := width
+	if numWidth > 0 {
+		dataWidth = width - (numWidth + colSepW)
+		if dataWidth < 10 {
+			dataWidth = 10
+		}
 	}
 
 	naturalW := colNaturalWidths(cols, rows)
@@ -477,13 +505,21 @@ func renderDataTable(cols []string, rows [][]string, nulls [][]bool, incomplete 
 		}
 		naturalW[pos.Column] = max(naturalW[pos.Column], presentationWidth)
 	}
-	visStart, visWidths, hasLeft, hasRight := colScrollWindow(naturalW, colScroll, width)
+	visStart, visWidths, hasLeft, hasRight := colScrollWindow(naturalW, colScroll, dataWidth)
 	visCols := cols[visStart : visStart+len(visWidths)]
 
 	start, visible := TableWindow(len(rows), cursor, height)
 
 	var sb strings.Builder
+	if numWidth > 0 {
+		sb.WriteString(styles.StyleHeaderDim.Render(fmt.Sprintf("%*s", numWidth, "#")))
+		sb.WriteString(styles.StyleBorder.Render(colSep))
+	}
 	sb.WriteString(renderHeaderScrolled(visCols, visWidths, hasLeft, hasRight) + "\n")
+
+	if numWidth > 0 {
+		sb.WriteString(styles.StyleBorder.Render(strings.Repeat("-", numWidth) + "-+-"))
+	}
 	sb.WriteString(renderSep(visCols, visWidths, hasLeft) + "\n")
 
 	for i := 0; i < visible; i++ {
@@ -500,7 +536,17 @@ func renderDataTable(cols []string, rows [][]string, nulls [][]bool, incomplete 
 			}
 			visNulls = nulls[row][visStart:end]
 		}
-		sb.WriteString(renderRowWithMetadata(visRow, visNulls, visWidths, row == cursor, hasLeft, incomplete, row+rowOffset, visStart) + "\n")
+		selected := row == cursor
+		if numWidth > 0 {
+			numStr := fmt.Sprintf("%*d", numWidth, rowNumBase+row)
+			if selected {
+				sb.WriteString(styles.StyleCursor.Render(numStr + colSep))
+			} else {
+				sb.WriteString(styles.StyleHeaderDim.Render(numStr))
+				sb.WriteString(styles.StyleBorder.Render(colSep))
+			}
+		}
+		sb.WriteString(renderRowWithMetadata(visRow, visNulls, visWidths, selected, hasLeft, incomplete, row+rowOffset, visStart) + "\n")
 	}
 	return sb.String()
 }
